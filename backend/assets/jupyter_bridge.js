@@ -244,7 +244,11 @@
           var data = event.data;
           if (event.source !== window.parent || event.origin !== __PARENT_ORIGIN__ ||
               !data || data.type !== "vercel-notebook-capabilities" || data.token !== bridgeToken || typeof data.id !== "string") return;
-          event.source.postMessage({ type: "vercel-notebook-tool-result", id: data.id, result: { protocol: 2, ready: !!notebookWidget(window.jupyterapp) } }, event.origin);
+          var widget = notebookWidget(window.jupyterapp);
+          var kernel = widget && widget.sessionContext && widget.sessionContext.session && widget.sessionContext.session.kernel;
+          event.source.postMessage({ type: "vercel-notebook-tool-result", id: data.id, result: {
+            protocol: 2, ready: !!widget, connected: !!kernel && kernel.connectionStatus === "connected"
+          } }, event.origin);
         });
         window.addEventListener("message", function (event) {
           var data = event.data;

@@ -33,6 +33,7 @@ type Auth = {
   chat_model?: string;
 };
 type Editor = { name: string; url: string; token: string; notebookId?: string };
+type LiveEditor = Editor & { notebookId: string; ready: boolean; connected: boolean; expired?: boolean };
 async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(
     "/api" + path,
@@ -164,19 +165,18 @@ function App() {
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
-  const [editor, setEditor] = useState<Editor | null>(null);
+  const [editors, setEditors] = useState<Record<string, LiveEditor>>({});
+  const editorsRef = useRef(editors);
+  const editor = selected ? editors[selected] ?? null : null;
   const [chatOpen, setChatOpen] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
-  const [readyToken, setReadyToken] = useState<string | null>(null);
-  const navigation = useRef(0);
-  const startingEditors = useRef(new Map<string, { sequence: number; promise: Promise<void> }>());
+  const startingEditors = useRef(new Map<string, Promise<void>>());
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const recoveries = useRef(new Set<string>());
-  const snapshots = useRef(new Map<string, Promise<void>>());
-  const draftQueue = useRef(new Map<string, { token: string; source: string }>());
-  const draftRequests = useRef(new Map<string, Promise<void>>());
-  const [pendingDrafts, setPendingDrafts] = useState(0);
+  const savingEditors = useRef(new Map<string, Promise<void>>());
+  const closingTokens = useRef(new Set<string>());
+  const frames = useRef(new Map<string, HTMLIFrameElement>());
   const [saved, setSaved] = useState("");
   const [mobile, setMobile] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
@@ -184,9 +184,23 @@ function App() {
   const saving = useRef<AbortController | null>(null);
   const closingRef = useRef(false);
   const saveEpoch = useRef(0);
-  const activeEditor = editor?.notebookId === selected ? editor : null;
-  const editorReady = !!activeEditor && readyToken === activeEditor.token;
+  const activeEditor = editor?.connected ? editor : null;
+  const editorReady = !!activeEditor?.ready;
+  frame.current = editor ? frames.current.get(editor.token) ?? null : null;
   const notebook = notebooks.find((n) => n.id === selected);
+
+  function putEditor(id: string, value: LiveEditor | null) {
+    const next = { ...editorsRef.current };
+    if (value) next[id] = value;
+    else delete next[id];
+    editorsRef.current = next;
+    setEditors(next);
+  }
+
+  function patchEditor(id: string, token: string, patch: Partial<LiveEditor>) {
+    const current = editorsRef.current[id];
+    if (current?.token === token) putEditor(id, { ...current, ...patch });
+  }
 
   const renameNotebook = useCallback((id: string, title: string) => {
     setNotebooks(items => {
@@ -221,11 +235,11 @@ function App() {
     history.replaceState({}, "", url);
   }, [selected]);
 
-  const saveBridge = useCallback(async () => {
-    if (!editor || !frame.current?.contentWindow)
+  const saveBridge = useCallback(async (current: Editor) => {
+    if (!frames.current.get(current.token)?.contentWindow)
       throw new Error("The editor is not ready yet.");
-    const target = frame.current.contentWindow;
-    const origin = new URL(editor.url).origin;
+    const target = frames.current.get(current.token)!.contentWindow!;
+    const origin = new URL(current.url).origin;
     const id = crypto.randomUUID();
     return await new Promise<string>((resolve, reject) => {
       const timer = window.setTimeout(() => {
@@ -259,11 +273,11 @@ function App() {
       };
       window.addEventListener("message", receive);
       target.postMessage(
-        { type: "vercel-notebook-export", id, token: editor.token },
+        { type: "vercel-notebook-export", id, token: current.token },
         origin,
       );
     });
-  }, [editor]);
+  }, []);
 
   const persist = useCallback(
     async (publish = false, close = false) => {
@@ -271,6 +285,7 @@ function App() {
       if (closingRef.current || (!close && saving.current)) return;
       if (close) {
         closingRef.current = true;
+        closingTokens.current.add(editor.token);
         saveEpoch.current++;
         saving.current?.abort();
         saving.current = null;
@@ -279,7 +294,7 @@ function App() {
       if (!close) saving.current = controller;
       const epoch = saveEpoch.current;
       try {
-        const source = await saveBridge();
+        const source = await saveBridge(editor);
         if (epoch !== saveEpoch.current) return;
         // Keep the live document mounted until durable persistence succeeds.
         await api(`/notebooks/${selected}/${close ? "close" : "save"}`, {
@@ -300,152 +315,155 @@ function App() {
           void refresh().catch((e) => setError(e.message));
         }
         if (close) {
-          setEditor(null);
+          putEditor(selected, null);
           setSaved("");
         }
       } catch (error) {
         // A close/discard supersedes any older autosave, including its stale-token error.
         if (epoch === saveEpoch.current) throw error;
       } finally {
-        if (close) closingRef.current = false;
+        if (close) { closingRef.current = false; closingTokens.current.delete(editor.token); }
         else if (saving.current === controller) saving.current = null;
       }
     },
     [editor, selected, saveBridge, refresh],
   );
 
-  function flushDraft(id: string): Promise<void> {
-    const running = draftRequests.current.get(id);
-    if (running) return running;
-    const draft = draftQueue.current.get(id);
-    if (!draft) return Promise.resolve();
-    const request = api(`/notebooks/${id}/close`, { ...draft, publish: false }, AbortSignal.timeout(15000)).then(() => {
-      if (draftQueue.current.get(id) === draft) draftQueue.current.delete(id);
-      setPendingDrafts(draftQueue.current.size);
-      if (!draftQueue.current.size) setError(previous => previous === "A notebook draft is waiting to save. Keep this tab open; retrying automatically." ? "" : previous);
-    }).finally(() => { draftRequests.current.delete(id); });
-    draftRequests.current.set(id, request);
-    return request;
-  }
-
-  function leaveEditor(): Promise<void> {
-    if (!editor?.notebookId) return Promise.resolve();
-    if (readyToken !== editor.token) { setEditor(null); return Promise.resolve(); }
-    const existing = snapshots.current.get(editor.token);
+  function saveEditor(current: LiveEditor): Promise<void> {
+    if (!current.ready || closingTokens.current.has(current.token)) return Promise.resolve();
+    const existing = savingEditors.current.get(current.token);
     if (existing) return existing;
-    const outgoing = editor;
-    saving.current?.abort();
-    saving.current = null;
-    saveEpoch.current++;
-    const snapshot = saveBridge().then(source => {
-      draftQueue.current.set(outgoing.notebookId!, { source, token: outgoing.token });
-      setPendingDrafts(draftQueue.current.size);
-      setEditor(current => current?.token === outgoing.token ? null : current);
-      setSaved("");
-      void flushDraft(outgoing.notebookId!).catch(() => setError("A notebook draft is waiting to save. Keep this tab open; retrying automatically."));
-    }).finally(() => { snapshots.current.delete(outgoing.token); });
-    snapshots.current.set(outgoing.token, snapshot);
-    return snapshot;
+    const work = (async () => {
+      const source = await saveBridge(current);
+      if (closingTokens.current.has(current.token) || editorsRef.current[current.notebookId]?.token !== current.token) return;
+      await api(`/notebooks/${current.notebookId}/save`, { token: current.token, source }, AbortSignal.timeout(15000));
+    })().catch(error => {
+      if (closingTokens.current.has(current.token) || editorsRef.current[current.notebookId]?.token !== current.token) return;
+      throw error;
+    }).finally(() => savingEditors.current.delete(current.token));
+    savingEditors.current.set(current.token, work);
+    return work;
   }
 
-  function openEditor(id: string, sequence = navigation.current): Promise<void> {
+  function openEditor(id: string): Promise<void> {
     const existing = startingEditors.current.get(id);
-    if (existing?.sequence === sequence) return existing.promise;
-    const promise = (async () => {
-      if (existing) await existing.promise.catch(() => {});
-      await loadEditor(id, sequence);
-    })().finally(() => {
-      if (startingEditors.current.get(id)?.promise === promise) startingEditors.current.delete(id);
-    });
-    startingEditors.current.set(id, { sequence, promise });
+    if (existing) return existing;
+    if (editorsRef.current[id]?.connected && editorsRef.current[id]?.ready) return Promise.resolve();
+    const promise = loadEditor(id).finally(() => startingEditors.current.delete(id));
+    startingEditors.current.set(id, promise);
     return promise;
   }
 
-  async function loadEditor(id: string, sequence: number) {
-    if (selectedRef.current !== id || sequence !== navigation.current) return;
-    setSetupStage("Connecting…"); setSetupLog(""); setSetupSeconds(0); setSetupStarted(Date.now());
+  async function loadEditor(id: string) {
+    const visible = () => selectedRef.current === id;
+    if (visible()) { setSetupStage("Connecting…"); setSetupLog(""); setSetupSeconds(0); setSetupStarted(Date.now()); }
+    const previous = editorsRef.current[id];
     try {
-      await flushDraft(id);
-      if (sequence !== navigation.current) return;
+      if (previous?.ready) {
+        closingTokens.current.add(previous.token);
+        const source = await saveBridge(previous);
+        await api(`/notebooks/${id}/close`, { token: previous.token, source, publish: false });
+      }
       const result = await startEditor(id, (kind, message) => {
-        if (sequence !== navigation.current) return;
+        if (!visible()) return;
         if (kind === "progress") setSetupStage(message);
         if (kind === "log") setSetupLog(log => (log + message).slice(-20000));
       });
-      if (sequence !== navigation.current || selectedRef.current !== id) return;
-      setEditor({ ...result, notebookId: id });
-      setSetupStage("Loading notebook…");
-      // Let the iframe and Chat props observe the new session before tools continue.
+      putEditor(id, { ...result, notebookId: id, ready: false, connected: false });
+      if (visible()) setSetupStage("Loading notebook…");
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       await new Promise<void>((resolve, reject) => {
         const requestId = crypto.randomUUID();
         const origin = new URL(result.url).origin;
         const cleanup = () => { clearInterval(poll); clearTimeout(timeout); window.removeEventListener("message", receive); };
         const receive = (event: MessageEvent) => {
-          if (event.source !== frame.current?.contentWindow || event.origin !== origin || event.data?.id !== requestId) return;
-          if (event.data.result?.ready) { cleanup(); setReadyToken(result.token); setSetupStage(""); resolve(); }
+          if (event.source !== frames.current.get(result.token)?.contentWindow || event.origin !== origin || event.data?.id !== requestId) return;
+          if (event.data.result?.ready && event.data.result?.connected !== false) {
+            cleanup(); patchEditor(id, result.token, { ready: true, connected: true });
+            if (visible()) setSetupStage("");
+            resolve();
+          }
         };
         const poll = setInterval(() => {
-          if (sequence !== navigation.current) { cleanup(); reject(new Error("Notebook selection changed.")); return; }
-          frame.current?.contentWindow?.postMessage({ type: "vercel-notebook-capabilities", id: requestId, token: result.token }, origin);
+          frames.current.get(result.token)?.contentWindow?.postMessage({ type: "vercel-notebook-capabilities", id: requestId, token: result.token }, origin);
         }, 250);
         const timeout = setTimeout(() => { cleanup(); reject(new Error("The editor is still loading. Try the request again shortly.")); }, 60000);
         window.addEventListener("message", receive);
       });
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     } finally {
-      if (sequence === navigation.current) setSetupStarted(null);
+      if (previous) closingTokens.current.delete(previous.token);
+      if (visible()) setSetupStarted(null);
     }
   }
 
-  useEffect(() => {
-    if (!pendingDrafts) return;
-    const timer = setInterval(() => {
-      for (const id of draftQueue.current.keys()) void flushDraft(id).catch(() => {});
-    }, 5000);
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => { clearInterval(timer); window.removeEventListener("beforeunload", warn); };
-  }, [pendingDrafts]);
+  function editorConnected(current: LiveEditor): Promise<boolean> {
+    const target = frames.current.get(current.token)?.contentWindow;
+    if (!target) return Promise.resolve(false);
+    const origin = new URL(current.url).origin;
+    const id = crypto.randomUUID();
+    return new Promise(resolve => {
+      const finish = (connected: boolean) => { clearTimeout(timer); window.removeEventListener("message", receive); resolve(connected); };
+      const receive = (event: MessageEvent) => {
+        if (event.source === target && event.origin === origin && event.data?.id === id && event.data.type === "vercel-notebook-tool-result") {
+          finish(!!event.data.result?.ready && event.data.result?.connected !== false);
+        }
+      };
+      const timer = setTimeout(() => finish(false), 5000);
+      window.addEventListener("message", receive);
+      target.postMessage({ type: "vercel-notebook-capabilities", id, token: current.token }, origin);
+    });
+  }
 
   useEffect(() => {
-    if (!activeEditor || busy || setupStarted !== null) return;
     let cancelled = false;
-    const sequence = navigation.current;
+    let checking = false;
     const check = async () => {
+      if (checking) return;
+      checking = true;
       try {
-        const response = await fetch(`/api/notebooks/${activeEditor.notebookId}/editor-status`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: activeEditor.token }),
-        });
-        if (response.status !== 410 || cancelled || recoveries.current.has(activeEditor.token)) return;
-        recoveries.current.add(activeEditor.token);
-        setError("");
-        setSetupStage("Recovering your Python environment…");
-        await leaveEditor();
-        if (sequence === navigation.current && selectedRef.current === activeEditor.notebookId) await openEditor(activeEditor.notebookId!, sequence);
-      } catch (error) {
-        recoveries.current.delete(activeEditor.token);
-        if (sequence === navigation.current) setError(error instanceof Error ? error.message : "Automatic editor recovery failed.");
-      }
+        await Promise.all(Object.values(editorsRef.current).filter(current => current.ready).map(async current => {
+          if (closingTokens.current.has(current.token)) return;
+          try {
+            const [response, connected] = await Promise.all([fetch(`/api/notebooks/${current.notebookId}/editor-status`, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: current.token }), signal: AbortSignal.timeout(5000),
+            }), editorConnected(current)]);
+            if (cancelled || closingTokens.current.has(current.token) || editorsRef.current[current.notebookId]?.token !== current.token) return;
+            patchEditor(current.notebookId, current.token, { connected: response.ok && connected, expired: response.status === 410 || response.status === 409 });
+            // Background editors stay disconnected; only recover the currently displayed one.
+            if (response.status === 410 && current.connected && selectedRef.current === current.notebookId && !recoveries.current.has(current.token)) {
+              recoveries.current.add(current.token);
+              try { await openEditor(current.notebookId); }
+              catch (error) { setError(error instanceof Error ? error.message : "Automatic editor recovery failed."); }
+              finally { recoveries.current.delete(current.token); }
+            }
+          } catch {
+            if (!cancelled) patchEditor(current.notebookId, current.token, { connected: false });
+          }
+        }));
+      } finally { checking = false; }
     };
     const timer = setInterval(() => { void check(); }, 15000);
-    return () => { cancelled = true; clearInterval(timer); };
-  }, [activeEditor, busy, setupStarted]);
+    const online = () => { void check(); };
+    const offline = () => {
+      for (const current of Object.values(editorsRef.current)) patchEditor(current.notebookId, current.token, { connected: false });
+    };
+    window.addEventListener("online", online); window.addEventListener("offline", offline);
+    return () => { cancelled = true; clearInterval(timer); window.removeEventListener("online", online); window.removeEventListener("offline", offline); };
+  }, []);
 
   useEffect(() => {
-    if (!activeEditor || !editorReady) return;
     const interval = setInterval(() => {
-      if (saving.current || closingRef.current) return;
-      persist().catch((e) => setError(e.message));
+      for (const current of Object.values(editorsRef.current)) {
+        void saveEditor(current).catch(() => setError("A notebook draft could not be saved. Keep this tab open; autosave will retry."));
+      }
     }, 30000);
     const unload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
+      if (Object.keys(editorsRef.current).length) event.preventDefault();
     };
     window.addEventListener("beforeunload", unload);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("beforeunload", unload);
-    };
-  }, [activeEditor, editorReady, persist]);
+    return () => { clearInterval(interval); window.removeEventListener("beforeunload", unload); };
+  }, []);
 
   async function action(label: string, operation: () => Promise<void>) {
     setBusy(label);
@@ -458,25 +476,14 @@ function App() {
       setBusy("");
     }
   }
-  async function choose(id: string | null) {
+  function choose(id: string | null) {
     if (chatBusy || closingRef.current || id === selected) return;
-    const editing = !!editor || setupStarted !== null;
-    const outgoingId = editor?.notebookId;
-    const sequence = ++navigation.current;
-    if (id === null) await leaveEditor();
+    if (editor?.ready) void saveEditor(editor).catch(() => setError("A notebook draft could not be saved. Keep this tab open; autosave will retry."));
     selectedRef.current = id;
-    setSelected(id); setMobile(false); setError(""); setSetupStage(""); setSetupStarted(null);
-    let exported = false;
-    try {
-      // Selection changes immediately; retain the old iframe only until its memory is exported.
-      await leaveEditor();
-      exported = true;
-      if (id && editing && sequence === navigation.current) await openEditor(id, sequence);
-    } catch (error) {
-      if (sequence !== navigation.current) return;
-      setError(error instanceof Error ? error.message : "Could not switch notebooks.");
-      if (!exported && editor && outgoingId) { selectedRef.current = outgoingId; setSelected(outgoingId); }
-    }
+    setSelected(id); setMobile(false); setError(""); setSaved("");
+    const loadingEditor = !!id && startingEditors.current.has(id);
+    setSetupStage(loadingEditor ? "Loading notebook…" : "");
+    setSetupStarted(loadingEditor ? Date.now() : null);
   }
   const date = notebook
     ? new Date(notebook.updated_at * 1000).toLocaleDateString(undefined, {
@@ -529,7 +536,7 @@ function App() {
               ? "Only 1st1 can create notebooks"
               : undefined
           }
-          disabled={!!busy || !!editor || (!!auth.user && !auth.can_edit)}
+          disabled={!!busy || chatBusy || (!!auth.user && !auth.can_edit)}
           onClick={() =>
             auth.can_edit
               ? setCreating(true)
@@ -565,7 +572,7 @@ function App() {
               >
                 <BookOpen size={16} />
                 <span>{n.title}</span>
-                {n.id === selected && <span className="active-dot" />}
+                {editors[n.id]?.ready && editors[n.id]?.connected && <span className="running-editor-dot" aria-label="Editor connected" title="Editor running" />}
               </button>
             ))}
           {!loading && !notebooks.length && (
@@ -597,7 +604,7 @@ function App() {
                 <button
                   className="icon-button"
                   title="Sign out"
-                  disabled={!!editor}
+                  disabled={Object.keys(editors).length > 0}
                 >
                   <LogOut size={16} />
                 </button>
@@ -648,7 +655,7 @@ function App() {
                         if (!window.confirm(`Delete “${notebook.title}”? This permanently deletes its published notebook, draft, and chat history.`)) return;
                         void action("Deleting notebook…", async () => {
                           await api(`/notebooks/${notebook.id}/delete`, {});
-                          setEditor(null);
+                          putEditor(notebook.id, null);
                           setSelected(null);
                           setSaved("");
                           setNotebooks(items => {
@@ -701,35 +708,7 @@ function App() {
                 {setupLog && <pre ref={setupOutput} className="setup-output" aria-label="Installation output">{setupLog}</pre>}
               </section>
             )}
-            <div className="notebook-workspace">
-            <div className={"notebook-surface " + (activeEditor ? "editing" : "")}>
-              <div className="surface-toolbar">
-                <span>
-                  <span className={activeEditor ? "green-dot" : "gray-dot"} />
-                  {activeEditor ? "JUPYTER LAB" : "NOTEBOOK"}
-                </span>
-                <span>
-                  {activeEditor ? (
-                    "Changes are private until published"
-                  ) : (
-                    <>
-                      <Check size={13} /> Published
-                    </>
-                  )}
-                </span>
-              </div>
-              {editor && <iframe
-                key={editor.url} ref={frame} title="Jupyter notebook editor" src={editor.url}
-                style={editorReady ? undefined : { display: "none" }} referrerPolicy="no-referrer"
-                allow="clipboard-read; clipboard-write"
-              />}
-              {!editorReady && <PublishedNotebook
-                key={`${selected}-${renderVersion}-${notebook.render_url || "local"}`}
-                notebook={notebook} version={renderVersion}
-              />}
-            </div>
-            {auth.can_edit && <Suspense fallback={null}><Chat model={auth.chat_model} key={selected!} notebookId={selected!} editor={activeEditor} frame={frame} disabled={!!busy} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy} onRename={renameNotebook} onEnterEditing={() => openEditor(selected!, navigation.current)} /></Suspense>}
-            </div>
+
           </>
         ) : notebooks.length > 0 ? (
           <section className="empty welcome" aria-labelledby="welcome-title">
@@ -775,6 +754,38 @@ function App() {
             )}
           </div>
         )}
+            <div className="notebook-workspace" style={notebook ? undefined : { display: "none" }}>
+            <div className={"notebook-surface " + (activeEditor ? "editing" : "")}>
+              <div className="surface-toolbar">
+                <span>
+                  <span className={activeEditor ? "green-dot" : "gray-dot"} />
+                  {activeEditor ? "JUPYTER LAB" : "NOTEBOOK"}
+                </span>
+                <span>
+                  {activeEditor ? (
+                    "Changes are private until published"
+                  ) : (
+                    <>
+                      <Check size={13} /> Published
+                    </>
+                  )}
+                </span>
+              </div>
+              {Object.values(editors).map(current => <iframe
+                key={current.token} ref={node => {
+                  if (node) frames.current.set(current.token, node); else frames.current.delete(current.token);
+                  if (current.notebookId === selectedRef.current) frame.current = node;
+                }} title={`Jupyter editor: ${notebooks.find(item => item.id === current.notebookId)?.title || current.notebookId}`} src={current.url}
+                style={editorReady && current.notebookId === selected ? undefined : { display: "none" }} referrerPolicy="no-referrer"
+                allow="clipboard-read; clipboard-write"
+              />)}
+              {notebook && !editorReady && <PublishedNotebook
+                key={`${selected}-${renderVersion}-${notebook.render_url || "local"}`}
+                notebook={notebook} version={renderVersion}
+              />}
+            </div>
+            {notebook && auth.can_edit && <Suspense fallback={null}><Chat model={auth.chat_model} key={selected!} notebookId={selected!} editor={activeEditor} frame={frame} disabled={!!busy} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy} onRename={renameNotebook} onEnterEditing={() => openEditor(selected!)} /></Suspense>}
+            </div>
         {error && (
           <div className="error" role="alert">
             <span>{error}</span>

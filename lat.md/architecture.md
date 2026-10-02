@@ -185,7 +185,7 @@ The public notebook list renders independently of authentication. A five-minute,
 
 [[frontend/src/main.tsx#cachedNotebooks]] stores only the public list and published render URLs in session storage. Auth and edit permissions are never cached. Fresh list responses replace cached entries and reconcile selection; unavailable storage falls back to normal loading.
 
-Opening the app without a notebook query parameter shows a welcome prompt to choose from the sidebar, never selecting the first cached or fetched notebook automatically. Direct notebook links still open their target; missing targets return to the welcome view. The logo returns to this unselected view after exporting the live draft; database persistence continues in the background. Switching notebooks from editing immediately shows the destination publication while its editor loads. On mobile, Browse notebooks opens navigation. An empty workspace retains its creation prompt. [[backend/db.py]] reuses bounded Postgres connections for warm requests.
+Opening the app without a notebook query parameter shows a welcome prompt to choose from the sidebar, never selecting the first cached or fetched notebook automatically. Direct notebook links still open their target; missing targets return to the welcome view. The logo returns to this unselected view while preserving mounted editors. Switching notebooks shows the destination publication unless it already has a connected editor in this browser; a green sidebar dot identifies those live editors. Returning reuses the same iframe and kernel. On mobile, Browse notebooks opens navigation. An empty workspace retains its creation prompt. [[backend/db.py]] reuses bounded Postgres connections for warm requests.
 
 
 ## Notebook deletion

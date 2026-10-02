@@ -195,3 +195,22 @@ test('shared-server bridge uses the exact document path and per-editor token', a
   assert.equal(response.id, 'good');
   assert.equal(response.error, undefined);
 });
+
+// @lat: [[editing#Retained editor connection tests]]
+test('connection reports distinguish a loaded notebook from a connected kernel', async () => {
+  const { handlers, parent, shell } = bridge({ path: 'notebook.ipynb', save() {} });
+  let reply;
+  parent.postMessage = value => { reply = value; };
+  const message = { source: parent, origin: 'https://app.test', data: {
+    type: 'vercel-notebook-capabilities', token: 'token', id: 'connection',
+  } };
+  await handlers.message(message);
+  assert.equal(reply.result.ready, true);
+  assert.equal(reply.result.connected, false);
+  shell.currentWidget.sessionContext = { session: { kernel: { connectionStatus: 'connected' } } };
+  await handlers.message(message);
+  assert.equal(reply.result.connected, true);
+  shell.currentWidget.sessionContext.session.kernel.connectionStatus = 'disconnected';
+  await handlers.message(message);
+  assert.equal(reply.result.connected, false);
+});

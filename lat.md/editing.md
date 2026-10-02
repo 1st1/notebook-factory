@@ -59,7 +59,9 @@ Save & exit renders the saved document once and uploads the rendered HTML to Blo
 
 ## Closing and recovery
 
-Notebook navigation preserves the private draft and leaves editing without publishing. The Exit and Reconnect buttons are removed. Save & exit remains the explicit publication action. The discard API remains available for legacy clients.
+Notebook navigation preserves the draft and keeps its editor running in the background. Save & exit publishes and closes that editor.
+
+The Exit and Reconnect buttons are removed. The discard API remains available for legacy clients.
 
 [[backend/main.py#close]] saves the exported draft and clears the current editor record in a single conditional database update before returning success. [[backend/main.py#stop_closed_editor]] retires only the detached Jupyter session and its document as a response background task. The VM and other kernels stay running.
 
@@ -169,14 +171,20 @@ Browser verification deliberately stalls an autosave and the post-publication me
 
 The owner-only editor-status endpoint reports expiry without reading stale notebook files. A browser health check detects an expired runtime, exports the live document, saves it, and opens a replacement automatically.
 
-[[backend/main.py#editor_status]] distinguishes expired runtimes from transient failures. [[frontend/src/main.tsx]] checks every 15 seconds outside startup/publication. Recovery never blindly reruns code; kernel variables are lost. Failure to export leaves the original browser document intact and reports an error rather than silently replacing unsaved work.
+[[backend/main.py#editor_status]] distinguishes expired runtimes from transient failures. [[frontend/src/main.tsx]] checks all ready editor sessions every 15 seconds, excluding sessions being closed. Only the selected expired editor automatically restarts; disconnected background editors lose their dot and wait for explicit reopening. Recovery never blindly reruns code; kernel variables are lost. Failure to export leaves the original browser document intact and reports an error rather than silently replacing unsaved work.
 
 ## Immediate navigation
 
-Switching from editing selects the destination and displays its published content immediately, then loads its editor. The published preview stays visible until the new Jupyter document reports ready through the bridge.
+Switching notebooks selects the destination immediately. It opens read-only unless this browser already has a connected editor for that notebook; returning to a live editor reuses its mounted iframe instantly.
 
-The outgoing iframe is retained only until its live document is exported. Its save/close request proceeds in the background with an in-memory retry queue and an unload warning while unacknowledged. Switching back awaits that notebook's pending save. Navigation sequence checks prevent a late startup from replacing a newer selection. The logo returns to the unselected workspace after exporting memory, without waiting for database persistence.
+[[frontend/src/main.tsx]] retains a pool of editor iframes keyed by session token. Hiding an editor, selecting another notebook, or visiting the logo's welcome screen does not reload its document or close its kernel. Multiple editors can remain open, sharing the Sandbox VM while retaining separate kernels. Navigation exports a background draft save without blocking selection or closing the session. All ready editors continue autosaving every 30 seconds, including hidden ones.
 
-Background draft requests have bounded timeouts and retry automatically. [[backend/main.py#close]] acknowledges an already-closed matching draft idempotently, covering a lost response after commit. Pending exports remain tab-local until acknowledged; an unload warning cannot guarantee recovery after a browser crash. Navigation remains blocked during active assistant work to avoid abandoning a tool mid-execution.
+The sidebar shows a green dot only when an editor is ready and its server and kernel connection are healthy. Health polling combines the backend status endpoint with the authenticated bridge's kernel connection status. Browser offline events clear dots immediately; health checks restore them on reconnection. An expired background editor is not restarted just because it exists. Clicking it displays the publication; Edit notebook explicitly recovers its retained browser document before opening a replacement.
 
-[Browser flow regression](../frontend/tests/notebook_flows.cjs) stalls the outgoing save, delays the memory export, checks immediate destination selection and published preview, and completes editor startup. It also simulates Sandbox expiry and verifies automatic recovery using exported browser contents. Run after the frontend build with Playwright installed, optionally setting PLAYWRIGHT_MODULE to its module path.
+The iframe pool remains mounted even on the welcome screen. Save & exit publishes and removes only that notebook's editor. Tab close/reload loses browser state; durable drafts remain in Postgres, and an unload warning reminds the owner about open sessions. Navigation remains blocked during assistant work to avoid abandoning a tool mid-execution.
+
+[Browser flow regression](../frontend/tests/notebook_flows.cjs) verifies read-only navigation without startup, retained iframe state and load count across notebooks and the welcome screen, multiple live dots, dot removal after kernel disconnection, and selected-editor recovery. Run after the frontend build with Playwright installed, optionally setting PLAYWRIGHT_MODULE to its module path.
+
+## Retained editor connection tests
+
+The bridge reports document readiness separately from kernel connectivity. A loaded document without a connected kernel must not qualify for a green running-editor dot.

@@ -816,3 +816,5 @@ main > .error > button { flex-shrink: 0; }
 
 .chat-consent { margin: 12px 0; padding: 14px; border: 1px solid #d8dece; border-radius: 8px; background: #eef1e7; }
 .chat-consent p { margin: 0 0 10px; }
+
+.running-editor-dot { width: 7px; height: 7px; border-radius: 50%; background: #71935e; flex: 0 0 auto; margin-left: auto; }
