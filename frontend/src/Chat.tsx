@@ -8,6 +8,7 @@ import type { RefObject } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolActivity } from "./ToolActivity";
+import { useNotebookHistory } from "./useNotebookHistory";
 import { Send, Square, X, RotateCcw, LoaderCircle } from "lucide-react";
 
 export function Chat({
@@ -32,6 +33,7 @@ export function Chat({
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(0);
   const active = useRef(true);
+  const userTurn = useRef(false);
   const count = useRef(0);
   const halted = useRef(false);
   const compatible = useRef(false);
@@ -59,10 +61,12 @@ export function Chat({
   } = useChat({
     transport,
     sendAutomaticallyWhen: (options) =>
+      userTurn.current &&
       !halted.current &&
       count.current < 24 &&
       lastAssistantMessageIsCompleteWithToolCalls(options),
     onToolCall({ toolCall }) {
+      if (!userTurn.current) return;
       setPending((n) => n + 1);
       const work = tail.current.then(async () => {
         try {
@@ -162,9 +166,10 @@ export function Chat({
     },
   });
   const busy = status === "submitted" || status === "streaming" || pending > 0;
+  const history = useNotebookHistory(notebookId, editor.token, messages, setMessages, busy);
   useEffect(() => {
-    onBusy(busy);
-  }, [busy, onBusy]);
+    onBusy(busy || history.blocking);
+  }, [busy, history.blocking, onBusy]);
   useEffect(() => {
     active.current = true;
     return () => {
@@ -185,8 +190,10 @@ export function Chat({
           className="icon-button"
           aria-label="New chat"
           title="New chat"
-          disabled={busy}
+          disabled={busy || history.blocking || !history.loaded || history.reloadRequired}
           onClick={() => {
+            userTurn.current = false;
+            history.clearError();
             setMessages([]);
             clearError();
             count.current = 0;
@@ -205,7 +212,13 @@ export function Chat({
       </header>
       {model && <div className="chat-model" title={model}>Model: {model.replace(/^gateway:/, "")}</div>}
       <div className="chat-messages" aria-live="polite">
-        {!messages.length && (
+        {history.loading && <p className="chat-hint">Loading conversation…</p>}
+        {history.saving && <p className="chat-hint">Saving conversation…</p>}
+        {history.error && <div role="alert" className="chat-error">
+          <p>{history.loaded ? "Chat history is not saved. " : ""}{history.error}</p>
+          <button className="button" onClick={() => { if (history.reloadRequired || !history.loaded) userTurn.current = false; history.retry(); }}>{history.reloadRequired ? "Reload saved chat" : "Retry"}</button>
+        </div>}
+        {history.loaded && !messages.length && (
           <p className="chat-hint">
             Ask me to fix a bug, explain a cell, or plot a chart. I can edit and
             run cells in this notebook. Changes stay in your draft.
@@ -258,7 +271,8 @@ export function Chat({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (!input.trim() || busy || disabled) return;
+          if (!input.trim() || busy || disabled || history.blocking || !history.loaded || !!history.error) return;
+          userTurn.current = true;
           count.current = 0;
           halted.current = false;
           failures.current = 0;
@@ -279,7 +293,7 @@ export function Chat({
             }
           }}
           aria-keyshortcuts="Meta+Enter Control+Enter"
-          disabled={busy || disabled}
+          disabled={busy || disabled || history.blocking || !history.loaded || !!history.error}
           rows={3}
         />
         <div>
@@ -298,7 +312,7 @@ export function Chat({
           ) : (
             <button
               className="button primary"
-              disabled={!input.trim() || disabled}
+              disabled={!input.trim() || disabled || history.blocking || !history.loaded || !!history.error}
             >
               <Send size={14} />
               Send

@@ -541,3 +541,59 @@ def test_current_chat_model_tracks_configuration(client, monkeypatch):
     assert client.get("/api/auth/me").json()["chat_model"] == "gateway:openai/gpt-6-luna"
     monkeypatch.setenv("AI_MODEL", "gateway:anthropic/claude-sonnet-4.6")
     assert client.get("/api/auth/me").json()["chat_model"] == "gateway:anthropic/claude-sonnet-4.6"
+
+
+# @lat: [[chat#Persistent history tests]]
+def test_chat_history_survives_discard_and_blocks_stale_writes(client, monkeypatch):
+    id = create(client)
+    current = {
+        "name": "sandbox",
+        "url": "https://sandbox.test/token/doc/tree/notebook.ipynb",
+        "token": "one",
+    }
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value=current))
+    monkeypatch.setattr(main.editor, "stop", AsyncMock())
+    client.post(f"/api/notebooks/{id}/editor")
+    path = f"/api/notebooks/{id}/chat-history"
+    assert client.post(path, json={"token": "one"}).json() == {"messages": [], "revision": 0}
+    messages = [
+        {"id": "u1", "role": "user", "parts": [{"type": "text", "text": "Plot a chart"}]},
+        {
+            "id": "a1",
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "tool-insert_cell",
+                    "toolCallId": "c1",
+                    "state": "input-available",
+                    "input": {"source": "print(42)"},
+                }
+            ],
+        },
+    ]
+    assert client.put(path, json={"token": "one", "revision": 0, "messages": messages}).json() == {
+        "revision": 1
+    }
+    assert client.put(path, json={"token": "one", "revision": 0, "messages": []}).status_code == 409
+    restored = client.post(path, json={"token": "one"}).json()
+    assert restored["messages"][1]["parts"][0]["state"] == "output-error"
+    assert "Interrupted" in restored["messages"][1]["parts"][0]["errorText"]
+    # Historical tools can be sent back as context without executing them.
+    main.chat.ai.ui.ai_sdk.to_messages(
+        [main.chat.ai.ui.ai_sdk.UIMessage.model_validate(m) for m in restored["messages"]]
+    )
+    assert "chat_history" not in client.get("/api/notebooks").json()[0]
+    assert client.post(f"/api/notebooks/{id}/discard", json={"token": "one"}).status_code == 200
+    current["token"] = "two"
+    client.post(f"/api/notebooks/{id}/editor")
+    assert client.post(path, json={"token": "two"}).json() == restored
+    assert client.put(path, json={"token": "one", "revision": 1, "messages": []}).status_code == 409
+    assert client.put(path, json={"token": "two", "revision": 1, "messages": []}).status_code == 200
+    assert client.post(path, json={"token": "two"}).json()["messages"] == []
+    assert client.put(path, content="x" * 1_000_001).status_code == 413
+    client.headers["origin"] = "https://evil.test"
+    assert client.post(path, json={"token": "two"}).status_code == 403
+    authenticate(client, "someone-else")
+    assert client.post(path, json={"token": "two"}).status_code == 403
+    client.cookies.clear()
+    assert client.post(path, json={"token": "two"}).status_code == 401

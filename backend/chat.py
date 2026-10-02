@@ -16,6 +16,30 @@ class ChatRequest(BaseModel):
     messages: list[ai.ui.ai_sdk.UIMessage] = Field(min_length=1, max_length=160)
 
 
+class HistoryRequest(BaseModel):
+    token: str = Field(max_length=256)
+    revision: int = Field(ge=0)
+    messages: list[ai.ui.ai_sdk.UIMessage] = Field(max_length=160)
+
+
+def history_messages(messages):
+    result = []
+    for message in messages:
+        value = message.model_dump(by_alias=True, exclude_none=True)
+        for part in value["parts"]:
+            if part["type"] in ("text", "reasoning"):
+                part["state"] = "done"
+            elif part["type"].startswith("tool-") or part["type"] == "dynamic-tool":
+                if part.get("state") not in ("output-available", "output-error", "output-denied"):
+                    part.update(
+                        state="output-error",
+                        errorText="Interrupted in an earlier turn. Read the current notebook before continuing; execution may have occurred.",
+                    )
+                    part.setdefault("input", {})
+        result.append(value)
+    return result
+
+
 def tool(name, description, properties, required):
     return ai.types.tools.Tool(
         kind="function",
@@ -74,7 +98,7 @@ TOOLS = [
     ),
 ]
 SYSTEM = """You are a Python notebook assistant inside JupyterLab. Help with explanations, bug fixes and charts.
-Always read_notebook first to get the current live document, including unsaved edits. Use cell IDs, never invent them.
+Conversation history persists across editing sessions, including sessions whose edits were discarded. Earlier tool results and kernel state are historical, not proof of the current document. Never replay previous tool calls. Always read_notebook first to get the current live document, including unsaved edits. Use cell IDs, never invent them.
 For open-ended requests to demonstrate, show a trick, or make something cool, implement ONE focused example or trick, not a collection. Keep it to a few cells and one clear result. Only make multiple examples when the user explicitly asks for them. You have a budget of 24 tool calls per user message, including reads, edits, execution, and scrolling; plan within it.
 Use tools to implement requested changes directly. Preserve unrelated work. Never claim a change or execution succeeded without a successful tool result.
 Run changed code when useful, inspect errors and fix them. Charts must be displayed inline. Matplotlib has configured DejaVu Sans, Noto Emoji, and Noto Sans JP fallback fonts; preserve that font.family list when styling plots so emoji and Japanese glyphs render. Emoji appear in monochrome. Do not suppress missing-glyph warnings; fix font selection instead. NumPy, pandas, SciPy, Matplotlib, and Seaborn are already installed. For other missing dependencies, add and run a code cell using %pip install package-name (for example, %pip install numpy matplotlib). The notebook kernel environment includes pip; this magic installs into that exact environment. Then run the imports and requested code.

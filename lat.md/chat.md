@@ -2,7 +2,7 @@
 
 The editor's Chat button opens a right sidebar where the assistant can read, edit, and execute the active notebook using Python AI SDK and AI SDK UI.
 
-[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and an active editor token on every model turn. Cmd+Enter or Ctrl+Enter submits the chat composer; plain Enter inserts a newline. History is ephemeral and disappears when the editor closes.
+[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and an active editor token on every model turn. Cmd+Enter or Ctrl+Enter submits the chat composer; plain Enter inserts a newline. History is private, stored per notebook in Postgres, and restored when the editor reopens.
 
 ## Agent and streaming
 
@@ -65,3 +65,19 @@ Tool cards distinguish argument generation from execution and errors. Code previ
 Chat renders GitHub-flavored Markdown tables in horizontally scrollable containers. The server reports the configured model ID, which is displayed below the chat toolbar.
 
 [[backend/config.py#chat_model]] supplies both inference and [[backend/auth.py#me]] so environment overrides cannot leave a hardcoded model label behind. A regression verifies both the default and override values. Browser checks cover table headers, cells, and narrow-panel overflow.
+
+## Persistent conversations
+
+[[frontend/src/useNotebookHistory.ts#useNotebookHistory]] loads the notebook conversation and saves it after each completed or stopped turn. History survives publishing, discarding edits, reconnecting, and reopening the editor.
+
+[[backend/main.py#load_chat_history]] and [[backend/main.py#save_chat_history]] require the owner, same-origin requests, and a current editor token. Revision checks reject concurrent stale writes, and private history is excluded from public notebook metadata and exports. Storage uses the existing one-megabyte and 160-message limits. New chat clears the saved conversation; it does not change notebook content.
+
+[[backend/chat.py#history_messages]] marks unfinished tools as interrupted when storing them. Rehydration does not submit model requests or replay tools; the next user message begins a fresh turn. The prompt treats previous results as historical because notebook edits may have been discarded and kernel memory may have changed.
+
+Navigation and editor exit wait for pending history saves. Save failures remain visible with a retry action; conflicts offer reloading the saved chat instead of overwriting it. Completed turns are durable; forcibly closing the browser mid-reply can lose the unfinished turn. Authentication permissions are not cached with conversations.
+
+## Persistent history tests
+
+API regressions verify history survives draft discard and editor replacement, interrupted tools become inert history, stale revisions and tokens fail, New chat clears history, and public or unauthorized requests cannot read it.
+
+Browser checks cover restoration without model/tool replay, completed-turn persistence, save failure/retry, and clearing persisted history.

@@ -407,3 +407,39 @@ async def notebook_chat(id: str, request: Request):
         ),
         headers=chat.ai.ui.ai_sdk.UI_MESSAGE_STREAM_HEADERS,
     )
+
+
+@app.post("/api/notebooks/{id}/chat-history", dependencies=[Depends(require_owner)])
+async def load_chat_history(id: str, body: EditorRequest):
+    row, _ = await checked_editor(id, body.token)
+    return {"messages": json.loads(row["chat_history"] or "[]"), "revision": row["chat_revision"]}
+
+
+@app.put("/api/notebooks/{id}/chat-history", dependencies=[Depends(require_owner)])
+async def save_chat_history(id: str, request: Request):
+    raw = await request.body()
+    if len(raw) > 1_000_000:
+        raise HTTPException(413, "Chat history is too large. Start a new chat.")
+    try:
+        body = chat.HistoryRequest.model_validate_json(raw)
+    except ValueError:
+        raise HTTPException(422, "Invalid chat history") from None
+    row, _ = await checked_editor(id, body.token)
+    history = json.dumps(chat.history_messages(body.messages))
+    if len(history.encode()) > 1_000_000:
+        raise HTTPException(413, "Chat history is too large. Start a new chat.")
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            update(notebooks)
+            .where(
+                notebooks.c.id == id,
+                notebooks.c.editor == row["editor"],
+                notebooks.c.chat_revision == body.revision,
+            )
+            .values(chat_history=history, chat_revision=body.revision + 1)
+        )
+        if result.rowcount != 1:
+            raise HTTPException(
+                409, "Chat changed in another session. Reload saved chat before continuing."
+            )
+    return {"revision": body.revision + 1}
