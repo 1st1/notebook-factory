@@ -26,7 +26,7 @@ def generation():
         return deployment
     # Local development also invalidates environments when their bundled assets change.
     digest = hashlib.sha256()
-    for path in sorted(ASSETS.iterdir()):
+    for path in [Path(__file__), Path(__file__).with_name("pyproject.toml"), *sorted(ASSETS.iterdir())]:
         if path.is_file():
             digest.update(path.name.encode())
             digest.update(path.read_bytes())
@@ -67,7 +67,7 @@ async def start(source: str, report=lambda kind, message: None):
                 [
                     "-c",
                     '(command -v uv || python3 -m pip install "uv>=0.8,<1") && '
-                    'uv venv --python 3.13 .venv && uv pip install --python .venv/bin/python "jupyterlab==4.4.10" "pysqlite3-binary==0.5.4.post2"',
+                    'uv venv --seed --python 3.13 .venv && uv pip install --python .venv/bin/python "jupyterlab==4.4.10" "pysqlite3-binary==0.5.4.post2"',
                 ],
                 stdout=output,
                 stderr=output,

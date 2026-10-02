@@ -6,7 +6,9 @@ A notebook's durable document lives in Postgres. JupyterLab provides temporary e
 
 [[backend/main.py#provision_editor]] reuses a reachable editor or creates a replacement from the durable draft. Transient provider failures preserve the existing session instead of silently replacing it.
 
-[[backend/editor.py#start]] creates a randomly named Sandbox with port 8888 and an initial 15-minute execution limit. It writes `notebook.ipynb`, creates a Python 3.13 virtual environment with uv, and installs pinned JupyterLab 4.4.10 and pysqlite3-binary.
+[[backend/editor.py#start]] creates a randomly named Sandbox with port 8888 and an initial 15-minute execution limit. It writes `notebook.ipynb`, creates a Python 3.13 virtual environment with uv and seeded pip, and installs pinned JupyterLab 4.4.10 and pysqlite3-binary.
+
+Users and the assistant can run `%pip install numpy matplotlib` in a code cell to install packages into the active kernel environment. The assistant prompt recommends this notebook-native syntax.
 
 Each new Sandbox installs its environment from scratch; there is no prebuilt snapshot cache. Installation has a 220-second process deadline. After configuration, the backend starts Jupyter and polls its public route for up to 45 seconds before declaring failure.
 
@@ -87,7 +89,7 @@ Reference publishing verifies hashes of prepared notebook/HTML files and creates
 
 Editor environments belong to the deployment that created them. Opening or reconnecting after a deployment replaces an older environment instead of reusing its embedded Jupyter bridge.
 
-[[backend/editor.py#generation]] uses Vercel's deployment ID (deployment URL fallback); local development hashes bundled editor assets. Legacy sessions without a generation are stale. There is currently no Sandbox snapshot cache; this policy governs live environment reuse.
+[[backend/editor.py#generation]] uses Vercel's deployment ID (deployment URL fallback); local development hashes bundled editor assets, provisioning code, and Python dependency declarations. Legacy sessions without a generation are stale. There is currently no Sandbox snapshot cache; this policy governs live environment reuse.
 
 [[backend/main.py#provision_editor]] recovers the old Sandbox's latest saved notebook into the database before provisioning its replacement. It keeps the old environment if recovery or startup fails and stops it only after the new session is committed. Once replaced, old session tokens cannot save or publish. Unopened stale environments expire normally; already-open browsers are not forcibly interrupted at deployment time.
 
