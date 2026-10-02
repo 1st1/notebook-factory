@@ -27,6 +27,7 @@ The production alias is public. Unique deployment URLs have Vercel deployment pr
 | Variable | Purpose |
 | --- | --- |
 | `APP_URL` | Canonical app origin; production uses `https://notebook-factory-green.vercel.app` |
+| `BLOB_READ_WRITE_TOKEN` | Backend upload credential for the public rendered-notebook Blob store |
 | `SESSION_SECRET` | Random signing secret, at least 32 characters in deployment |
 | `DATABASE_URL` | Neon/Postgres connection URL with TLS options |
 | `GITHUB_CLIENT_ID` | OAuth application client ID |
@@ -109,3 +110,14 @@ npx vercel@62.1.0 logs --environment production --since 10m --limit 100 --json
 | Close feels slow | Notebook save and database persistence precede success; Sandbox shutdown runs afterward |
 
 Jupyter output is redirected to `.jupyter.log` inside the Sandbox. Startup failures retain a bounded excerpt and redact the capability token there. General SDK HTTP logs can still contain sensitive capability URLs; redact them before sharing. Do not restart or stop an active user Sandbox merely to inspect it.
+
+
+## Published HTML in Blob
+
+[[backend/publication.py]] uploads published HTML to the public `notebook-factory-rendered` store (`store_tQonYaLi3LNwbxCH`, iad1), connected to production. Drafts and notebook source remain in Postgres.
+
+Each publication gets a unique URL with a long cache lifetime. Metadata includes the URL, letting the browser fetch directly from Blob without an additional database render request. HTML is served as a download by Blob, so the frontend fetches it and uses iframe srcdoc. A CSP meta tag inside the artifact preserves content restrictions alongside the iframe sandbox.
+
+The database retains rendered HTML as a fallback. Without Blob credentials, local development uses the original render endpoint. A failed CDN fetch falls back to that endpoint. Existing rows upload their stored HTML once when the render endpoint is visited, guarded by publication revision. Upload failure prevents switching the published database record.
+
+Previously published Blob URLs remain public; this implementation does not garbage-collect old versions or uploads left behind by failed database commits. The Blob store contains only documents submitted for publication, never ordinary autosaved drafts.

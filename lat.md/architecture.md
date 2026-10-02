@@ -29,6 +29,7 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 | `id`, `title` | UUID identity and creation-time display title |
 | `source` | Latest durable private draft, including saved cell outputs |
 | `published` | Notebook document exposed by public render and download endpoints |
+| `render_url` | Immutable public Blob URL for rendered HTML; included in notebook metadata |
 | `published_html` | Pre-rendered HTML for the same published revision; nullable for legacy rows |
 | `created_at`, `updated_at`, `revision` | Creation/publication metadata; draft saves do not change publication time |
 | `editor` | Nullable JSON containing Sandbox name, editor URL, and capability token |
@@ -42,11 +43,11 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 
 ## Public rendering
 
-[[backend/render.py#render]] converts notebooks to HTML during creation and publication. Public views serve stored HTML without executing cells or running nbconvert. [[backend/render.py#validate]] enforces valid notebook structure and the size limit from [[backend/config.py#MAX_BYTES]].
+[[backend/render.py#render]] converts notebooks to HTML during creation and publication. Public views fetch published HTML from Blob’s CDN into a sandboxed iframe, without executing cells or running nbconvert. [[backend/render.py#validate]] enforces valid notebook structure and the size limit from [[backend/config.py#MAX_BYTES]].
 
 Lab and base templates are bundled in [backend/templates](../backend/templates), with explicit template search paths. Functions cannot rely on system-installed Jupyter data directories. Public downloads also return `published`, even for the signed-in owner.
 
-The rendered iframe and API response both enforce sandboxing. The CSP blocks network connections and nested frames while permitting selected script CDNs, styles, fonts, and images. Some interactive outputs therefore do not work publicly. HTML conversion runs off the API event loop. Source, HTML, and revision are published in one transaction; rendering failure preserves the prior publication. Legacy rows render once on first read, with a revision-guarded cache write that cannot overwrite a newer publication. Notebook listings select metadata only.
+The rendered iframe and API response both enforce sandboxing. The CSP blocks network connections and nested frames while permitting selected script CDNs, styles, fonts, and images. Some interactive outputs therefore do not work publicly. HTML conversion runs off the API event loop. Blob upload completes first, then source, fallback HTML, Blob URL, and revision are published in one transaction; rendering failure preserves the prior publication. Legacy rows render once on first read, with a revision-guarded cache write that cannot overwrite a newer publication. Notebook listings select metadata only.
 
 ## Authentication
 
@@ -90,3 +91,10 @@ Save and close require the current editor capability token in the JSON body. Sta
 [[backend/tests/test_app.py]] checks private/public separation, editor reuse, stale sessions, failure recovery, concurrent startup, and save-before-shutdown behavior.
 
 It also checks bundled rendering templates, workspace-relative launcher paths, progress events, and lease release after startup failure. [[verification]] describes how to run the suite and what requires live infrastructure.
+
+
+## Viewport layout
+
+[Frontend styles](../frontend/src/style.css) fixes the app to the dynamic viewport height and suppresses outer document scrolling and overscroll. The notebook surface fills the remaining space below the header and notebook actions.
+
+Published and editor iframes scroll internally rather than imposing minimum heights on the page. The sidebar notebook list scrolls independently with overscroll disabled; sidebar branding and account controls stay fixed. Setup output has a bounded scroll area. Compact spacing preserves notebook space on short landscape screens.

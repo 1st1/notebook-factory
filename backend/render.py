@@ -1,9 +1,22 @@
+from html import escape
 from pathlib import Path
 
 import nbformat
 from fastapi import HTTPException
 
 from config import MAX_BYTES
+
+CONTENT_POLICY = "default-src 'none'; base-uri 'none'; form-action 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https:; img-src data: https:; font-src data: https:; connect-src 'none'; frame-src 'none'"
+
+
+def isolated_html(html: str):
+    # srcdoc has no HTTP response headers; put the policy before all notebook content.
+    policy = (
+        '<meta http-equiv="Content-Security-Policy" content="'
+        + escape(CONTENT_POLICY, quote=True)
+        + '">'
+    )
+    return html.replace("<head>", "<head>" + policy, 1)
 
 
 def validate(source: str):

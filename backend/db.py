@@ -16,6 +16,7 @@ notebooks = Table(
     Column("source", Text, nullable=False),
     Column("published", Text, nullable=False),
     Column("published_html", Text),
+    Column("render_url", Text),
     Column("created_at", Integer, nullable=False),
     Column("updated_at", Integer, nullable=False),
     Column("revision", Integer, nullable=False, default=1),
@@ -33,8 +34,9 @@ async def initialize():
         columns = await conn.run_sync(
             lambda sync: {column["name"] for column in inspect(sync).get_columns("notebooks")}
         )
-        if "published_html" not in columns:
-            await conn.execute(text("ALTER TABLE notebooks ADD COLUMN published_html TEXT"))
+        for column in ("published_html", "render_url"):
+            if column not in columns:
+                await conn.execute(text(f"ALTER TABLE notebooks ADD COLUMN {column} TEXT"))
 
 
 def timestamp():

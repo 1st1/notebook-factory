@@ -422,3 +422,55 @@ def test_save_and_exit_publishes_html_and_closes(client, monkeypatch):
     row = client.portal.call(main.get_notebook, id)
     assert row["editor"] is None and row["revision"] == 2
     assert "Saved and closed" in row["published_html"]
+
+
+def test_blob_publication_and_failed_upload_preserve_previous_version(client, monkeypatch):
+    upload = AsyncMock(return_value="https://store.public.blob.vercel-storage.com/first.html")
+    monkeypatch.setattr(main.publication, "upload", upload)
+    id = create(client)
+    assert next(row for row in client.get("/api/notebooks").json() if row["id"] == id)[
+        "render_url"
+    ].endswith("/first.html")
+    session = {"name": "blob-test", "token": "t", "url": "https://example.test"}
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value=session))
+    monkeypatch.setattr(main.editor, "read", AsyncMock(return_value=new_notebook("Private draft")))
+    client.post(f"/api/notebooks/{id}/editor")
+    client.post(f"/api/notebooks/{id}/save", json={"token": "t"})
+    assert upload.await_count == 1
+    upload.side_effect = RuntimeError("Blob upload failed")
+    with pytest.raises(RuntimeError, match="Blob upload failed"):
+        client.post(f"/api/notebooks/{id}/save", json={"token": "t", "publish": True})
+    row = client.portal.call(main.get_notebook, id)
+    assert row["render_url"].endswith("/first.html") and row["revision"] == 1
+    assert "Private draft" not in row["published"]
+
+
+def test_legacy_html_is_uploaded_and_reused(client, monkeypatch):
+    id = create(client)
+    upload = AsyncMock(return_value="https://store.public.blob.vercel-storage.com/legacy.html")
+    monkeypatch.setattr(main.publication, "enabled", lambda: True)
+    monkeypatch.setattr(main.publication, "upload", upload)
+    assert client.get(f"/api/notebooks/{id}/render").status_code == 200
+    assert client.get(f"/api/notebooks/{id}/render").status_code == 200
+    upload.assert_awaited_once()
+    assert client.portal.call(main.get_notebook, id)["render_url"].endswith("/legacy.html")
+
+
+@pytest.mark.asyncio
+async def test_blob_upload_has_isolation_policy_and_immutable_url(monkeypatch):
+    from types import SimpleNamespace
+
+    import publication
+
+    monkeypatch.setenv("BLOB_READ_WRITE_TOKEN", "test-token")
+    put = AsyncMock(
+        return_value=SimpleNamespace(url="https://store.public.blob.vercel-storage.com/test.html")
+    )
+    monkeypatch.setattr(publication, "put_async", put)
+    await publication.upload("id", "<html><head></head><body>Published</body></html>")
+    payload = put.call_args.args[1].decode()
+    assert 'http-equiv="Content-Security-Policy"' in payload
+    assert "connect-src &#x27;none&#x27;" in payload
+    assert payload.index("Content-Security-Policy") < payload.index("<body>")
+    assert put.call_args.kwargs["add_random_suffix"] is True
+    assert put.call_args.kwargs["access"] == "public"

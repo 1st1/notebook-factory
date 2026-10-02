@@ -17,7 +17,7 @@ node --test backend/tests/test_save_bridge.cjs
 lat check
 ```
 
-The current suite produces 23 passing test cases, including parameterized authorization cases. [[architecture#Authorization tests]] and [[architecture#Persistence tests]] remain stable anchors for existing test annotations.
+The current suite produces 26 passing test cases, including parameterized authorization cases. [[architecture#Authorization tests]] and [[architecture#Persistence tests]] remain stable anchors for existing test annotations.
 
 Coverage includes owner/origin enforcement, invalid sessions and OAuth state, draft/public separation, stale capabilities, close/reopen, failed saves, startup failure cleanup, expiry recovery, and concurrent startup serialization. Rendering tests check stored HTML reads, one-time legacy backfill, concurrent publication during backfill, atomic publication failures, and upgrading an existing database. They also simulate absent system templates; launcher tests check location-relative paths.
 
@@ -55,3 +55,5 @@ The direct live kernel smoke test executed `6 * 7` and returned `42`. A prior br
 [[lat#Notebook Factory knowledge graph]] indexes the knowledge graph. Keep these files aligned with implemented behavior and validate links and section structure with `lat check` after edits.
 
 Preserve existing architecture test anchors when reorganizing documentation. Do not store secrets, raw Sandbox capability URLs, temporary check scripts, or deployment-by-deployment journals in this graph.
+
+Blob tests cover upload failure preserving the prior publication, drafts avoiding uploads, migration of existing HTML, and embedding a restrictive CSP in the uploaded artifact.

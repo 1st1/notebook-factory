@@ -5,7 +5,6 @@ import {
   BookOpen,
   Check,
   ChevronRight,
-  Code2,
   Download,
   Github,
   LoaderCircle,
@@ -23,6 +22,7 @@ type Notebook = {
   title: string;
   updated_at: number;
   revision: number;
+  render_url?: string | null;
 };
 type Auth = {
   user: { login: string } | null;
@@ -88,6 +88,34 @@ async function startEditor(
     await reader.cancel();
     reader.releaseLock();
   }
+}
+
+function PublishedNotebook({ notebook, version }: { notebook: Notebook; version: number }) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setHtml(null);
+    setFailed(false);
+    if (!notebook.render_url) return;
+    const controller = new AbortController();
+    fetch(notebook.render_url, { signal: controller.signal, credentials: "omit", referrerPolicy: "no-referrer" })
+      .then(response => {
+        if (!response.ok) throw new Error("Notebook unavailable");
+        return response.text();
+      })
+      .then(setHtml)
+      .catch(error => { if (error.name !== "AbortError") setFailed(true); });
+    return () => controller.abort();
+  }, [notebook.render_url]);
+  const useBlob = notebook.render_url && !failed;
+  if (useBlob && html === null) return <div className="empty" role="status">Loading notebook…</div>;
+  return <iframe
+    title="Rendered notebook"
+    sandbox="allow-scripts allow-downloads"
+    srcDoc={useBlob ? html! : undefined}
+    src={useBlob ? undefined : `/api/notebooks/${notebook.id}/render?v=${version}`}
+    referrerPolicy="no-referrer"
+  />;
 }
 
 function App() {
@@ -314,7 +342,6 @@ function App() {
             notebook<span className="brand-light">factory</span>
           </span>
         </a>
-        <div className="workspace-label">YOUR CORNER OF CURIOSITY</div>
         <button
           className="new-button"
           title={
@@ -370,9 +397,6 @@ function App() {
             ) && <p className="list-empty">No matching notebooks.</p>}
         </nav>
         <div className="sidebar-bottom">
-          <div className="public-note">
-            <span className="green-dot" /> Open notebooks. Shared ideas.
-          </div>
           {auth.user ? (
             <div className="account">
               <span className="avatar">{auth.user.login[0].toUpperCase()}</span>
@@ -412,10 +436,11 @@ function App() {
             <ChevronRight size={14} />
             <strong>{notebook?.title || "Notebooks"}</strong>
           </div>
-          <span className="view-label">
-            <span className={editor ? "green-dot" : "gray-dot"} />
-            {editor ? "Live editor" : "Public view"}
-          </span>
+          {editor && (
+            <span className="view-label">
+              <span className="green-dot" /> Live editor
+            </span>
+          )}
         </header>
         {error && (
           <div className="error" role="alert">
@@ -447,9 +472,6 @@ function App() {
         ) : notebook ? (
           <>
             <section className="notebook-heading">
-              <div className="eyebrow">
-                <Code2 size={14} /> PYTHON NOTEBOOK
-              </div>
               <div className="title-row">
                 <h1>{notebook.title}</h1>
                 <div className="actions">
@@ -569,21 +591,13 @@ function App() {
                   allow="clipboard-read; clipboard-write"
                 />
               ) : (
-                <iframe
-                  key={`${selected}-${renderVersion}`}
-                  title="Rendered notebook"
-                  sandbox="allow-scripts allow-downloads"
-                  src={`/api/notebooks/${selected}/render?v=${renderVersion}`}
-                  referrerPolicy="no-referrer"
+                <PublishedNotebook
+                  key={`${selected}-${renderVersion}-${notebook.render_url || "local"}`}
+                  notebook={notebook}
+                  version={renderVersion}
                 />
               )}
             </div>
-            <footer>
-              <span>Made for thinking out loud.</span>
-              <span>
-                Notebook Factory <span className="footer-star">✳</span>
-              </span>
-            </footer>
           </>
         ) : (
           <div className="empty">

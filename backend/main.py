@@ -13,10 +13,11 @@ from sqlalchemy import or_, select, update
 from vercel.headers import HeadersContext
 
 import editor
+import publication
 from auth import require_owner
 from auth import router as auth_router
 from db import engine, initialize, notebooks, timestamp
-from render import new_notebook, render, validate
+from render import CONTENT_POLICY, new_notebook, render, validate
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +61,10 @@ async def get_notebook(id):
 
 
 def public(row):
-    return {key: row[key] for key in ("id", "title", "created_at", "updated_at", "revision")}
+    return {
+        key: row[key]
+        for key in ("id", "title", "created_at", "updated_at", "revision", "render_url")
+    }
 
 
 @app.get("/api/notebooks")
@@ -74,6 +78,7 @@ async def list_notebooks():
                     notebooks.c.created_at,
                     notebooks.c.updated_at,
                     notebooks.c.revision,
+                    notebooks.c.render_url,
                 ).order_by(notebooks.c.updated_at.desc())
             )
         ).mappings()
@@ -86,12 +91,16 @@ async def create_notebook(body: CreateNotebook):
     if not title:
         raise HTTPException(422, "Enter a notebook title")
     source = new_notebook(title)
+    id = str(uuid4())
+    html = await anyio.to_thread.run_sync(render, source)
+    render_url = await publication.upload(id, html)
     row = dict(
-        id=str(uuid4()),
+        id=id,
         title=title,
         source=source,
         published=source,
-        published_html=await anyio.to_thread.run_sync(render, source),
+        published_html=html,
+        render_url=render_url,
         created_at=timestamp(),
         updated_at=timestamp(),
         revision=1,
@@ -105,11 +114,16 @@ async def create_notebook(body: CreateNotebook):
 async def rendered(id: str):
     async with engine.connect() as conn:
         row = (
-            await conn.execute(select(notebooks.c.published_html).where(notebooks.c.id == id))
+            await conn.execute(
+                select(
+                    notebooks.c.published_html, notebooks.c.render_url, notebooks.c.revision
+                ).where(notebooks.c.id == id)
+            )
         ).first()
     if row is None:
         raise HTTPException(404, "Notebook not found")
-    html = row.published_html
+    row = dict(row._mapping)
+    html = row["published_html"]
     if html is None:
         # Legacy rows are rendered once. Never attach an old render to a newer publication.
         row = await get_notebook(id)
@@ -124,11 +138,21 @@ async def rendered(id: str):
                 )
                 .values(published_html=html)
             )
+    if publication.enabled() and not row["render_url"]:
+        url = await publication.upload(id, html)
+        async with engine.begin() as conn:
+            await conn.execute(
+                update(notebooks)
+                .where(
+                    notebooks.c.id == id,
+                    notebooks.c.revision == row["revision"],
+                    notebooks.c.render_url.is_(None),
+                )
+                .values(render_url=url)
+            )
     return HTMLResponse(
         html,
-        headers={
-            "Content-Security-Policy": "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https:; img-src data: https:; font-src data: https:; connect-src 'none'; frame-src 'none'"
-        },
+        headers={"Content-Security-Policy": "sandbox allow-scripts; " + CONTENT_POLICY},
     )
 
 
@@ -290,6 +314,7 @@ async def save_draft(id: str, body: EditorRequest, *, closing=False):
         values.update(
             published=source,
             published_html=html,
+            render_url=await publication.upload(id, html),
             updated_at=timestamp(),
             revision=notebooks.c.revision + 1,
         )
