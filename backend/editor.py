@@ -182,3 +182,11 @@ async def stop(editor: dict):
     async with session():
         instance = await sandbox.get_sandbox(name=editor["name"])
         await instance.stop()
+
+
+async def keep_alive(editor: dict):
+    async with session():
+        instance = await sandbox.get_sandbox(name=editor["name"])
+        current = instance.current_session
+        if current is not None and current.status == sandbox.SandboxStatus.RUNNING:
+            await current.extend_execution_time_limit(30)

@@ -87,7 +87,7 @@ svg {
   display: grid;
   place-items: center;
   width: 26px;
-  height: 30px;
+  height: 33px;
   flex-shrink: 0;
   color: #9ba194;
   border-radius: 5px;
@@ -99,6 +99,8 @@ svg {
   background: #e9ece3;
 }
 .brand {
+  height: 33px;
+  line-height: 1;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -773,3 +775,27 @@ main > .error > button { flex-shrink: 0; }
 .chat-table th, .chat-table td { border: 1px solid #dde1d5; padding: 6px 8px; text-align: left; min-width: 90px; }
 .chat-table th { background: #eef1e8; font-weight: 600; }
 .chat-table tr:nth-child(even) { background: #f5f6f0; }
+
+.welcome {
+  gap: 16px;
+  background: radial-gradient(ellipse at 50% 44%, #eef1e780, transparent 60%);
+}
+.welcome h1 { margin: 0; font-family: Manrope, sans-serif; letter-spacing: -1.2px; font-weight: 650; }
+.welcome p { color: #858d7d; font-size: 14px; line-height: 1.8; }
+.welcome-art { position: relative; width: 120px; height: 140px; margin-bottom: 24px; }
+.welcome-page { position: absolute; width: 92px; height: 120px; border: 1px solid #d9dfd1; border-radius: 10px; }
+.welcome-page-back { top: 5px; left: 24px; transform: rotate(9deg); background: #e9eee1; }
+.welcome-page-front { top: 10px; left: 6px; transform: rotate(-6deg); background: #fdfef9; box-shadow: 0 8px 24px #34452c08; display: flex; flex-direction: column; align-items: flex-start; padding: 17px; gap: 8px; color: #7c8d69; }
+.welcome-page-front svg { margin-bottom: 5px; }
+.welcome-page-front span { height: 2px; width: 100%; background: #e1e6d9; border-radius: 2px; }
+.welcome-page-front span:last-child { width: 65%; }
+.welcome-hint { margin-top: 12px; display: flex; align-items: center; gap: 8px; color: #969d8f; font-size: 11px; }
+.welcome-hint > span { width: 5px; height: 5px; border-radius: 50%; background: #94a381; }
+.welcome-browse { display: none; }
+@media (max-width: 650px) {
+  .welcome-browse { display: inline-flex; }
+  .welcome h1 { font-size: 30px; }
+}
+
+.button.delete-notebook { color: #ba5549; border-color: #dfaaa2; background: transparent; padding: 10px 12px; }
+.button.delete-notebook:hover:not(:disabled) { background: #fff0ed; border-color: #ba5549; }

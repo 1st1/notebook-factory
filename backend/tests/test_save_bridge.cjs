@@ -155,3 +155,25 @@ test('capability handshake is authenticated and works before the notebook loads'
   assert.equal(reply.id, 'handshake');
   assert.equal(reply.result.protocol, 2);
 });
+
+// @lat: [[editing#Browser recovery tests]]
+test('exports full live notebook without server access, even while a save is stuck', async () => {
+  const notebook = { nbformat: 4, nbformat_minor: 5, metadata: {}, cells: [
+    { cell_type: 'code', id: 'a', source: 'unsaved code', metadata: {}, execution_count: 1,
+      outputs: [{ output_type: 'display_data', data: { 'image/png': 'full-image-data' }, metadata: {} }] },
+  ] };
+  const context = { path: 'notebook.ipynb', ready: new Promise(() => {}),
+    model: { toJSON: () => notebook }, save() { throw Error('410'); } };
+  const { handlers, parent } = bridge(context);
+  let response;
+  parent.postMessage = value => { response = value; };
+  const event = { source: parent, origin: 'https://app.test', data: {
+    type: 'vercel-notebook-export', token: 'token', id: 'recover',
+  } };
+  await handlers.message({ ...event, origin: 'https://evil.test' });
+  assert.equal(response, undefined);
+  await handlers.message({ ...event, data: { ...event.data, token: 'wrong' } });
+  assert.equal(response, undefined);
+  await handlers.message(event);
+  assert.deepEqual(JSON.parse(response.source), notebook);
+});

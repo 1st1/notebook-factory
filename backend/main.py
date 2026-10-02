@@ -9,7 +9,7 @@ import anyio
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select, update
+from sqlalchemy import delete, or_, select, update
 from vercel.headers import HeadersContext
 
 import chat
@@ -51,6 +51,7 @@ class CreateNotebook(BaseModel):
 class EditorRequest(BaseModel):
     token: str
     publish: bool = False
+    source: str | None = Field(default=None, max_length=10 * 1024 * 1024)
 
 
 async def get_notebook(id):
@@ -317,14 +318,27 @@ async def checked_editor(id, token):
 
 
 @app.post("/api/notebooks/{id}/save", dependencies=[Depends(require_owner)])
-async def save(id: str, body: EditorRequest):
+async def save(id: str, body: EditorRequest, background_tasks: BackgroundTasks):
     async with editor_lease(id):
-        return await save_draft(id, body)
+        result = await save_draft(id, body)
+        if body.source is not None:
+            _, current = await checked_editor(id, body.token)
+            background_tasks.add_task(keep_editor_alive, current)
+        return result
+
+
+async def keep_editor_alive(current):
+    try:
+        await editor.keep_alive(current)
+    except Exception:
+        log.info("Sandbox unavailable after durable draft save", exc_info=True)
 
 
 async def save_draft(id: str, body: EditorRequest, *, closing=False):
     row, current = await checked_editor(id, body.token)
-    source = await editor.read(current, extend=False) if closing else await editor.read(current)
+    source = body.source
+    if source is None:
+        source = await editor.read(current, extend=False) if closing else await editor.read(current)
     validate(source)
     values = {"source": source}
     if body.publish:
@@ -361,6 +375,25 @@ async def close(id: str, body: EditorRequest, background_tasks: BackgroundTasks)
             )
         background_tasks.add_task(stop_closed_editor, current)
         return {"closed": True}
+
+
+@app.post("/api/notebooks/{id}/delete", dependencies=[Depends(require_owner)])
+async def delete_notebook(id: str, background_tasks: BackgroundTasks):
+    async with editor_lease(id):
+        row = await get_notebook(id)
+        async with engine.begin() as conn:
+            await conn.execute(delete(notebooks).where(notebooks.c.id == id))
+        if row["editor"]:
+            background_tasks.add_task(stop_closed_editor, json.loads(row["editor"]))
+        background_tasks.add_task(delete_notebook_artifacts, id)
+    return {"deleted": True}
+
+
+async def delete_notebook_artifacts(id: str):
+    try:
+        await publication.remove(id)
+    except Exception:
+        log.exception("Could not remove published notebook artifacts for %s", id)
 
 
 @app.post("/api/notebooks/{id}/discard", dependencies=[Depends(require_owner)])

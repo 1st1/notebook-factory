@@ -72,6 +72,7 @@ Public notebook metadata excludes drafts, editor capabilities, and leases. Respo
 | `POST /api/notebooks/{id}/editor` | Owner opens/reuses an editor; JSON or event stream depending on Accept |
 | `POST /api/notebooks/{id}/save` | Validates session token, persists draft, optionally publishes |
 | `POST /api/notebooks/{id}/close` | Persists draft, detaches editor, schedules Sandbox shutdown |
+| `POST /api/notebooks/{id}/delete` | Owner permanently removes notebook, draft, and chat history; schedules Sandbox and Blob cleanup |
 | `POST /api/notebooks/{id}/discard` | Discards draft, restores published source, and schedules shutdown |
 | `GET /api/auth/me` | Identity, edit permission, and OAuth configuration status |
 | `GET /api/health` | Process liveness only; does not query Postgres or Sandbox |
@@ -105,6 +106,19 @@ Published and editor iframes scroll internally rather than imposing minimum heig
 
 ## Workspace startup
 
-The public notebook list renders independently of authentication. A five-minute, tab-local metadata cache lets return visits show the published notebook immediately while fresh metadata loads.
+The public notebook list renders independently of authentication. A five-minute, tab-local metadata cache lets return visits show the sidebar immediately while fresh metadata loads.
 
-[[frontend/src/main.tsx#cachedNotebooks]] stores only the public list and published render URLs in session storage. Auth and edit permissions are never cached. Fresh list responses replace cached entries and reconcile selection; unavailable storage falls back to normal loading. [[backend/db.py]] reuses bounded Postgres connections for warm requests.
+[[frontend/src/main.tsx#cachedNotebooks]] stores only the public list and published render URLs in session storage. Auth and edit permissions are never cached. Fresh list responses replace cached entries and reconcile selection; unavailable storage falls back to normal loading.
+
+Opening the app without a notebook query parameter shows a welcome prompt to choose from the sidebar, never selecting the first cached or fetched notebook automatically. Direct notebook links still open their target; missing targets return to the welcome view. The logo returns to this unselected view, preserving the draft before leaving an active editor. On mobile, Browse notebooks opens navigation. An empty workspace retains its creation prompt. [[backend/db.py]] reuses bounded Postgres connections for warm requests.
+
+
+## Notebook deletion
+
+The owner sees a red outlined trash button in the notebook header. Confirmation names the notebook and explains that its published document, draft, and chat history will be deleted.
+
+[[backend/main.py#delete_notebook]] requires owner authentication and exact Origin, acquires the editor lease, and removes the database row. The UI returns to the unselected view and removes cached sidebar metadata. Background tasks stop any attached Sandbox and remove all published Blob artifacts under that notebook's prefix through [[backend/publication.py#remove]]. Cleanup failures are logged; the database deletion remains effective, but this is not a durable cleanup queue and cached public copies may persist.
+
+## Notebook deletion tests
+
+Owner deletion removes public reads and sidebar metadata, schedules Sandbox and artifact cleanup, and returns not found for repeated deletion. Mutation authorization coverage rejects anonymous users, other users, and cross-origin requests.

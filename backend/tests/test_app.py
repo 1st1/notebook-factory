@@ -42,6 +42,7 @@ def create(client):
         ("/api/notebooks/missing/save", {"token": "x"}),
         ("/api/notebooks/missing/close", {"token": "x"}),
         ("/api/notebooks/missing/discard", {"token": "x"}),
+        ("/api/notebooks/missing/delete", {}),
         ("/api/notebooks/missing/chat", {"token": "x", "messages": []}),
     ],
 )
@@ -597,3 +598,46 @@ def test_chat_history_survives_discard_and_blocks_stale_writes(client, monkeypat
     assert client.post(path, json={"token": "two"}).status_code == 403
     client.cookies.clear()
     assert client.post(path, json={"token": "two"}).status_code == 401
+
+
+# @lat: [[editing#Expired Sandbox persistence tests]]
+def test_browser_document_survives_dead_sandbox(client, monkeypatch):
+    id = create(client)
+    current = {"generation": main.editor.generation(), "name": "dead", "token": "secret",
+               "url": "https://example.test/secret/doc/tree/notebook.ipynb"}
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value=current))
+    read = AsyncMock(side_effect=RuntimeError("Sandbox is gone"))
+    monkeypatch.setattr(main.editor, "read", read)
+    monkeypatch.setattr(main.editor, "keep_alive", AsyncMock(side_effect=RuntimeError("Gone")))
+    monkeypatch.setattr(main.editor, "stop", AsyncMock(side_effect=RuntimeError("Gone")))
+    assert client.post(f"/api/notebooks/{id}/editor", json={}).status_code == 200
+    source = new_notebook("Recovered browser edits")
+    body = {"token": "secret", "source": source}
+    assert client.post(f"/api/notebooks/{id}/save", json={**body, "token": "stale"}).status_code == 409
+    assert client.post(f"/api/notebooks/{id}/save", json={**body, "source": "invalid"}).status_code == 422
+    assert client.post(f"/api/notebooks/{id}/save", json=body).status_code == 200
+    assert "Recovered browser edits" not in client.get(f"/api/notebooks/{id}/download").text
+    assert client.post(f"/api/notebooks/{id}/close", json={**body, "publish": True}).status_code == 200
+    assert "Recovered browser edits" in client.get(f"/api/notebooks/{id}/download").text
+    read.assert_not_awaited()
+    assert client.post(f"/api/notebooks/{id}/save", json=body).status_code == 409
+
+
+# @lat: [[architecture#Notebook deletion tests]]
+def test_delete_removes_notebook_and_stops_editor(client, monkeypatch):
+    id = create(client)
+    current = {"generation": main.editor.generation(), "name": "sandbox-delete",
+               "token": "secret", "url": "https://example.test"}
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value=current))
+    stop = AsyncMock()
+    remove = AsyncMock()
+    monkeypatch.setattr(main.editor, "stop", stop)
+    monkeypatch.setattr(main.publication, "remove", remove)
+    assert client.post(f"/api/notebooks/{id}/editor", json={}).status_code == 200
+    assert client.post(f"/api/notebooks/{id}/delete", json={}).status_code == 200
+    stop.assert_awaited_once_with(current)
+    remove.assert_awaited_once_with(id)
+    assert all(item["id"] != id for item in client.get("/api/notebooks").json())
+    for suffix in ("render", "download"):
+        assert client.get(f"/api/notebooks/{id}/{suffix}").status_code == 404
+    assert client.post(f"/api/notebooks/{id}/delete", json={}).status_code == 404

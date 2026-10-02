@@ -258,6 +258,21 @@
           });
         });
 
+        // Export the browser model without contacting the server or waiting on a save dialog.
+        window.addEventListener("message", function (event) {
+          var data = event.data;
+          if (event.source !== window.parent || event.origin !== __PARENT_ORIGIN__ ||
+              !data || data.type !== "vercel-notebook-export" || data.token !== bridgeToken || typeof data.id !== "string") return;
+          try {
+            var widget = notebookWidget(window.jupyterapp);
+            if (!widget || !widget.context.model) throw new Error("The notebook is not loaded. Keep this tab open and retry.");
+            var source = JSON.stringify(widget.context.model.toJSON());
+            event.source.postMessage({ type: "vercel-notebook-saved", id: data.id, source: source }, event.origin);
+          } catch (error) {
+            event.source.postMessage({ type: "vercel-notebook-save-error", id: data.id, message: error.message }, event.origin);
+          }
+        });
+
         window.addEventListener("message", async function (event) {
           var data = event.data;
           if (

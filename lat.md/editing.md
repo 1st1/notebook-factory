@@ -45,9 +45,9 @@ The stream owns the provisioning task and cancels it on disconnect. Provisioning
 
 ## Saving and publication
 
-[[frontend/src/main.tsx]] requests a bridge save before calling the backend. The bridge waits for the notebook context to be ready and saved, without waiting for full Jupyter workspace restoration.
+[[frontend/src/main.tsx]] exports the live browser document through the authenticated bridge before calling the backend. Export does not depend on a running Sandbox or completion of Jupyter save dialogs.
 
-A bridge response must arrive within 20 seconds. Every 30 seconds, the frontend saves a durable draft, skipping an autosave if another save/close is active. The backend reads the current notebook through Jupyter's file route, validates it, and commits it to Postgres.
+A bridge response must arrive within 20 seconds. Every 30 seconds, the frontend saves a durable draft, skipping an autosave if another save/close is active. The backend validates the exported notebook and commits it to Postgres. Legacy callers without an exported document retain the server file-read path.
 
 [[backend/editor.py#read]] bounds the HTTP read by the notebook size limit, checks session availability, and normally extends Sandbox execution time by 30 seconds. [[backend/main.py#save_draft]] stores the document and outputs; it never executes cells.
 
@@ -59,7 +59,9 @@ Exit discards the private draft, including autosaved changes, and restores the l
 
 [[backend/main.py#close]] saves the draft and clears the current editor record before returning success. [[backend/main.py#stop_closed_editor]] stops the detached Sandbox as a response background task.
 
-Closing skips the unnecessary Sandbox time extension. The iframe is detached after Jupyter confirms its save, so server shutdown cannot surface a kernel-death dialog in the visible editor. Failed persistence restores the iframe and does not stop the Sandbox.
+App autosaves and Save & exit export the full in-memory Jupyter model, including outputs, without invoking its server save or waiting on dialogs. The authenticated save endpoint validates the document and active session before persisting it. The iframe remains mounted until persistence succeeds. Sandbox keepalive is best effort after draft persistence and is skipped on close.
+
+Reconnect first persists the browser document and detaches the old session, then starts a fresh runtime from the durable draft. A dead Sandbox does not prevent recovery while the loaded browser model and current session token remain available. Already-open editors running an older bridge cannot export this way; do not reload them expecting to recover unsaved changes.
 
 Background shutdown errors are logged; the Sandbox execution limit bounds its remaining lifetime. This background task is not a durable job queue. Reopening after close provisions a fresh environment from the stored draft.
 
@@ -93,7 +95,7 @@ Editor environments belong to the deployment that created them. Opening or recon
 
 [[backend/main.py#provision_editor]] recovers the old Sandbox's latest saved notebook into the database before provisioning its replacement. It keeps the old environment if recovery or startup fails and stops it only after the new session is committed. Once replaced, old session tokens cannot save or publish. Unopened stale environments expire normally; already-open browsers are not forcibly interrupted at deployment time.
 
-A regression changes deployment generations, verifies same-deployment reuse, failed-replacement recovery, unpublished draft preservation, successful replacement, and stale-token rejection. Browser-only edits must reach Jupyter's normal save mechanism before recovery.
+A regression changes deployment generations, verifies same-deployment reuse, failed-replacement recovery, unpublished draft preservation, successful replacement, and stale-token rejection. App reconnect preserves browser-only edits through direct export before replacing the environment; automatic deployment replacement without an attached browser can only preserve an already-saved draft.
 
 ## Plot font fallback
 
@@ -122,3 +124,12 @@ The builder installs into a clean Sandbox, warms Matplotlib's cache, then snapsh
 Regressions verify editors restore the selected snapshot without installing packages, write the current notebook and bridge, and use non-persistent sessions. Dependency changes invalidate the prepared manifest.
 
 Live checks additionally verify snapshot creation, restoration, kernel execution, fonts, and startup timing.
+
+
+## Browser recovery tests
+
+The bridge exports complete unsaved cells and outputs without awaiting Jupyter readiness or server saves, and rejects untrusted origins and tokens.
+
+## Expired Sandbox persistence tests
+
+An owner can save and publish a browser document after Sandbox failure. Invalid documents and stale tokens are rejected; drafts remain private and cleanup or keepalive failure cannot undo persistence.

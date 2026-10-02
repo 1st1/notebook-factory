@@ -13,6 +13,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import "./style.css";
@@ -140,7 +141,7 @@ function App() {
   const [cached] = useState(cachedNotebooks);
   const [notebooks, setNotebooks] = useState<Notebook[]>(cached || []);
   const [selected, setSelected] = useState<string | null>(
-    new URLSearchParams(location.search).get("notebook") || cached?.[0]?.id || null,
+    new URLSearchParams(location.search).get("notebook") || null,
   );
   const [loading, setLoading] = useState(cached === null);
   const [error, setError] = useState("");
@@ -178,7 +179,7 @@ function App() {
       api<Notebook[]>("/notebooks").then(list => {
         setNotebooks(list);
         setLoading(false);
-        setSelected(current => list.some(n => n.id === current) ? current : list[0]?.id || null);
+        setSelected(current => list.some(n => n.id === current) ? current : null);
         try {
           sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: list }));
         } catch { /* Rendering must not depend on browser storage. */ }
@@ -204,12 +205,12 @@ function App() {
     const target = frame.current.contentWindow;
     const origin = new URL(editor.url).origin;
     const id = crypto.randomUUID();
-    await new Promise<void>((resolve, reject) => {
+    return await new Promise<string>((resolve, reject) => {
       const timer = window.setTimeout(() => {
         cleanup();
         reject(
           new Error(
-            "Jupyter did not finish saving. Wait for it to load and retry.",
+            "Could not recover the live document. Keep this tab open; this editor may need the latest recovery bridge.",
           ),
         );
       }, 20000);
@@ -226,7 +227,8 @@ function App() {
           return;
         if (event.data.type === "vercel-notebook-saved") {
           cleanup();
-          resolve();
+          if (typeof event.data.source !== "string") reject(new Error("Editor did not return a notebook."));
+          else resolve(event.data.source);
         }
         if (event.data.type === "vercel-notebook-save-error") {
           cleanup();
@@ -235,7 +237,7 @@ function App() {
       };
       window.addEventListener("message", receive);
       target.postMessage(
-        { type: "vercel-notebook-save", id, token: editor.token },
+        { type: "vercel-notebook-export", id, token: editor.token },
         origin,
       );
     });
@@ -248,11 +250,11 @@ function App() {
         await new Promise((resolve) => setTimeout(resolve, 100));
       saving.current = true;
       try {
-        await saveBridge();
-        // Detach Jupyter before stopping its server, after its document is saved.
-        if (close) setClosing(true);
+        const source = await saveBridge();
+        // Keep the live document mounted until durable persistence succeeds.
         await api(`/notebooks/${selected}/${close ? "close" : "save"}`, {
           token: editor.token,
+          source,
           publish,
         });
         setSaved(
@@ -277,6 +279,11 @@ function App() {
     },
     [editor, selected, saveBridge, refresh],
   );
+
+  async function reconnectEditor() {
+    await persist(false, true);
+    setEditor(await api<Editor>(`/notebooks/${selected}/editor`, {}));
+  }
 
   async function discardEditor() {
     if (!editor || !selected) return;
@@ -351,7 +358,13 @@ function App() {
             className="brand"
             href="/"
             onClick={(e) => {
-              if (editor) e.preventDefault();
+              e.preventDefault();
+              if (busy || chatBusy || saving.current) return;
+              void action("Returning to workspace…", async () => {
+                if (editor) await persist(false, true);
+                setSelected(null);
+                setMobile(false);
+              });
             }}
           >
             <span className="brand-icon">
@@ -479,6 +492,29 @@ function App() {
                   >
                     <Download size={16} />
                   </a>
+                  {auth.can_edit && (
+                    <button
+                      className="button delete-notebook"
+                      aria-label="Delete notebook"
+                      title="Delete notebook"
+                      disabled={!!busy || chatBusy}
+                      onClick={() => {
+                        if (!window.confirm(`Delete “${notebook.title}”? This permanently deletes its published notebook, draft, and chat history.`)) return;
+                        void action("Deleting notebook…", async () => {
+                          await api(`/notebooks/${notebook.id}/delete`, {});
+                          setEditor(null);
+                          setSelected(null);
+                          setSaved("");
+                          setNotebooks(items => {
+                            const remaining = items.filter(item => item.id !== notebook.id);
+                            try { sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: remaining })); } catch { /* Storage is optional. */ }
+                            return remaining;
+                          });
+                          await refresh();
+                        });
+                      }}
+                    ><Trash2 size={16} strokeWidth={1.5} /></button>
+                  )}
                   {auth.can_edit &&
                     (!editor ? (
                       <button
@@ -509,6 +545,7 @@ function App() {
                       </button>
                     ) : (
                       <>
+                        <button className="button" disabled={!!busy || chatBusy} onClick={() => action("Reconnecting…", reconnectEditor)} title="Preserve the notebook and start a fresh Python runtime">Reconnect</button>
                         <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(value => !value)}><MessageSquare size={16}/>Chat</button>
                         <button
                           className="button"
@@ -599,6 +636,18 @@ function App() {
             {editor && <Suspense fallback={null}><Chat model={auth.chat_model} key={editor.token} notebookId={selected!} editor={editor} frame={frame} disabled={!!busy || closing} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy}/></Suspense>}
             </div>
           </>
+        ) : notebooks.length > 0 ? (
+          <section className="empty welcome" aria-labelledby="welcome-title">
+            <div className="welcome-art" aria-hidden="true">
+              <div className="welcome-page welcome-page-back" />
+              <div className="welcome-page welcome-page-front"><BookOpen size={32} strokeWidth={1.25} /><span /><span /><span /></div>
+            </div>
+            <div className="eyebrow">YOUR WORKSPACE</div>
+            <h1 id="welcome-title">Choose a notebook.</h1>
+            <p>Open a notebook from the sidebar<br />to explore its code, charts, and ideas.</p>
+            <button className="button welcome-browse" onClick={() => setMobile(true)}><Menu size={16} /> Browse notebooks</button>
+            <div className="welcome-hint"><span />{notebooks.length} {notebooks.length === 1 ? "notebook" : "notebooks"} to explore</div>
+          </section>
         ) : (
           <div className="empty">
             <div className="empty-art">
@@ -638,11 +687,7 @@ function App() {
               <button
                 disabled={!!busy || chatBusy}
                 onClick={() =>
-                  action("Reconnecting…", async () => {
-                    setEditor(
-                      await api<Editor>(`/notebooks/${selected}/editor`, {}),
-                    );
-                  })
+                  action("Reconnecting…", reconnectEditor)
                 }
               >
                 Reconnect editor
