@@ -8,3 +8,8 @@
   #main:not([data-vercel-focused-editor="true"]) .jp-SideBar {
     visibility: hidden !important;
   }
+
+  /* Persistence is handled by the app, not Jupyter disk saves. */
+  .jp-Toolbar-item[data-jp-item-name="save"] {
+    display: none !important;
+  }
