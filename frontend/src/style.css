@@ -823,8 +823,8 @@ main > .error > button { flex-shrink: 0; }
 /* Notebook actions share the compact panel-header treatment used by chat. */
 main { padding-top: 16px; }
 .notebook-toolbar { gap: 12px; }
-.notebook-panel-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.notebook-panel-title h1 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notebook-panel-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
+.notebook-panel-title h1 { min-width: 0; margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .notebook-panel-title > span { flex-shrink: 0; }
 .notebook-header-actions { margin-left: auto; gap: 6px; flex-shrink: 0; }
 .notebook-header-actions .button { height: 28px; padding: 0 8px; font-size: 11px; gap: 5px; }
