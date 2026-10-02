@@ -180,6 +180,7 @@ function App() {
     setChatStates(states => ({ ...states, [id]: { busy, working } }));
   }, []);
   const startingEditors = useRef(new Map<string, Promise<void>>());
+  const [startingIds, setStartingIds] = useState<Set<string>>(new Set());
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const recoveries = useRef(new Set<string>());
@@ -360,7 +361,11 @@ function App() {
     const existing = startingEditors.current.get(id);
     if (existing) return existing;
     if (editorsRef.current[id]?.connected && editorsRef.current[id]?.ready) return Promise.resolve();
-    const promise = loadEditor(id).finally(() => startingEditors.current.delete(id));
+    setStartingIds(ids => new Set(ids).add(id));
+    const promise = loadEditor(id).finally(() => {
+      startingEditors.current.delete(id);
+      setStartingIds(ids => { const next = new Set(ids); next.delete(id); return next; });
+    });
     startingEditors.current.set(id, promise);
     return promise;
   }
@@ -584,7 +589,7 @@ function App() {
               >
                 <BookOpen size={16} />
                 <span>{n.title}</span>
-                {chatStates[n.id]?.working ? <span className="agent-working-dots" aria-label="Agent working" title="Agent working"><i /><i /><i /></span> : editors[n.id]?.ready && editors[n.id]?.connected && <span className="running-editor-dot" aria-label="Editor connected" title="Editor running" />}
+                {startingIds.has(n.id) ? <span className="running-editor-dot starting-editor-dot" aria-label="Editor starting" title="Starting Python environment…" /> : chatStates[n.id]?.working ? <span className="agent-working-dots" aria-label="Agent working" title="Agent working"><i /><i /><i /></span> : editors[n.id]?.ready && editors[n.id]?.connected && <span className="running-editor-dot" aria-label="Editor connected" title="Editor running" />}
               </button>
             ))}
           {!loading && !notebooks.length && (
