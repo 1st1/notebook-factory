@@ -11,6 +11,6 @@
   },
   "rewrites": [
     { "source": "/api/:path*", "destination": { "service": "api" } },
-    { "source": "/:path*", "destination": { "service": "web" } }
+    { "source": "/(.*)", "destination": { "service": "web" } }
   ]
 }

@@ -52,6 +52,44 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
   return response.json();
 }
 
+async function startEditor(
+  id: string,
+  report: (kind: string, message: string) => void,
+): Promise<Editor> {
+  const response = await fetch(`/api/notebooks/${id}/editor`, {
+    method: "POST",
+    headers: { Accept: "text/event-stream" },
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || `Request failed (${response.status})`);
+  }
+  if (!response.body) throw new Error("Setup stream is unavailable. Please retry.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) throw new Error("Setup connection ended before the editor was ready. Please retry.");
+      pending += decoder.decode(value, { stream: true });
+      let end;
+      while ((end = pending.indexOf("\n\n")) !== -1) {
+        const block = pending.slice(0, end);
+        pending = pending.slice(end + 2);
+        if (!block.startsWith("data: ")) continue;
+        const event = JSON.parse(block.slice(6));
+        if (event.type === "error") throw new Error(event.message);
+        if (event.type === "ready") return event.editor;
+        report(event.type, event.message);
+      }
+    }
+  } finally {
+    await reader.cancel();
+    reader.releaseLock();
+  }
+}
+
 function App() {
   const [auth, setAuth] = useState<Auth>({
     user: null,
@@ -65,10 +103,25 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [setupStage, setSetupStage] = useState("");
+  const [setupLog, setSetupLog] = useState("");
+  const [setupStarted, setSetupStarted] = useState<number | null>(null);
+  const [setupSeconds, setSetupSeconds] = useState(0);
+  const setupOutput = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    if (setupStarted === null) return;
+    const timer = setInterval(() => setSetupSeconds(Math.floor((Date.now() - setupStarted) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [setupStarted]);
+  useEffect(() => {
+    const output = setupOutput.current;
+    if (output) output.scrollTop = output.scrollHeight;
+  }, [setupLog]);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [closing, setClosing] = useState(false);
   const [saved, setSaved] = useState("");
   const [mobile, setMobile] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
@@ -150,6 +203,8 @@ function App() {
       saving.current = true;
       try {
         await saveBridge();
+        // Detach Jupyter before stopping its server, after its document is saved.
+        if (close) setClosing(true);
         await api(`/notebooks/${selected}/${close ? "close" : "save"}`, {
           token: editor.token,
           publish,
@@ -170,6 +225,7 @@ function App() {
           setSaved("");
         }
       } finally {
+        if (close) setClosing(false);
         saving.current = false;
       }
     },
@@ -179,6 +235,7 @@ function App() {
   useEffect(() => {
     if (!editor) return;
     const interval = setInterval(() => {
+      if (saving.current) return;
       persist().catch((e) => setError(e.message));
     }, 30000);
     const unload = (event: BeforeUnloadEvent) => {
@@ -397,12 +454,19 @@ function App() {
                           action(
                             "Starting your Python environment…",
                             async () => {
-                              setEditor(
-                                await api<Editor>(
-                                  `/notebooks/${selected}/editor`,
-                                  {},
-                                ),
-                              );
+                              setSetupStage("Connecting…");
+                              setSetupLog("");
+                              setSetupSeconds(0);
+                              setSetupStarted(Date.now());
+                              try {
+                                setEditor(await startEditor(selected!, (kind, message) => {
+                                  if (kind === "progress") setSetupStage(message);
+                                  if (kind === "log") setSetupLog(log => (log + message).slice(-20000));
+                                }));
+                                setSetupStage("");
+                              } finally {
+                                setSetupStarted(null);
+                              }
                             },
                           )
                         }
@@ -444,7 +508,7 @@ function App() {
                   : `Revision ${notebook.revision}`}
               </div>
             </section>
-            {busy && (
+            {busy && !setupStage && (
               <div className="progress" role="status">
                 <LoaderCircle size={16} className="spin" />
                 {busy}
@@ -452,6 +516,16 @@ function App() {
                   <small>First startup can take a few minutes.</small>
                 )}
               </div>
+            )}
+            {setupStage && (
+              <section className="setup-progress" aria-label="Environment setup">
+                <div className="progress" role="status">
+                  {setupStarted !== null && <LoaderCircle size={16} className="spin" />}
+                  <span>{setupStarted !== null ? setupStage : "Setup did not finish"}</span>
+                  <small>{setupSeconds}s elapsed</small>
+                </div>
+                {setupLog && <pre ref={setupOutput} className="setup-output" aria-label="Installation output">{setupLog}</pre>}
+              </section>
             )}
             <div className={"notebook-surface " + (editor ? "editing" : "")}>
               <div className="surface-toolbar">
@@ -469,7 +543,9 @@ function App() {
                   )}
                 </span>
               </div>
-              {editor ? (
+              {closing ? (
+                <div className="empty" role="status">Saving draft and closing editor…</div>
+              ) : editor ? (
                 <iframe
                   key={editor.url}
                   ref={frame}

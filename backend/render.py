@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import nbformat
 from fastapi import HTTPException
 from nbconvert import HTMLExporter
@@ -17,7 +19,12 @@ def validate(source: str):
 
 
 def render(source: str):
-    exporter = HTMLExporter(template_name="lab")
+    templates = str(Path(__file__).with_name("templates"))
+    exporter = HTMLExporter(
+        template_name="lab",
+        extra_template_basedirs=[templates],
+        extra_template_paths=[templates],
+    )
     exporter.exclude_input_prompt = False
     exporter.exclude_output_prompt = False
     html, _ = exporter.from_notebook_node(validate(source))

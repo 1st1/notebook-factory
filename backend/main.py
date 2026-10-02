@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import secrets
@@ -5,8 +6,8 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import anyio
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select, update
 from vercel.headers import HeadersContext
@@ -94,7 +95,11 @@ async def create_notebook(body: CreateNotebook):
 @app.get("/api/notebooks/{id}/render")
 async def rendered(id: str):
     row = await get_notebook(id)
-    html = await anyio.to_thread.run_sync(render, row["published"])
+    try:
+        html = await anyio.to_thread.run_sync(render, row["published"])
+    except Exception:
+        log.exception("Notebook rendering failed for %s", id)
+        raise
     return HTMLResponse(
         html,
         headers={
@@ -135,21 +140,65 @@ async def editor_lease(id):
     try:
         yield claim
     finally:
-        async with engine.begin() as conn:
-            await conn.execute(
-                update(notebooks)
-                .where(notebooks.c.id == id, notebooks.c.claim == claim)
-                .values(claim=None, claim_until=0)
-            )
+        with anyio.CancelScope(shield=True):
+            async with engine.begin() as conn:
+                await conn.execute(
+                    update(notebooks)
+                    .where(notebooks.c.id == id, notebooks.c.claim == claim)
+                    .values(claim=None, claim_until=0)
+                )
 
 
 @app.post("/api/notebooks/{id}/editor", dependencies=[Depends(require_owner)])
-async def open_editor(id: str):
-    async with editor_lease(id) as claim:
-        return await provision_editor(id, claim)
+async def open_editor(id: str, request: Request):
+    if "text/event-stream" not in request.headers.get("accept", ""):
+        async with editor_lease(id) as claim:
+            return await provision_editor(id, claim)
+    await get_notebook(id)
+
+    async def stream():
+        events = asyncio.Queue()
+
+        def report(kind, message):
+            events.put_nowait({"type": kind, "message": message})
+
+        async def provision():
+            try:
+                report("progress", "Checking your saved environment…")
+                async with editor_lease(id) as claim:
+                    result = await provision_editor(id, claim, report)
+                events.put_nowait({"type": "ready", "editor": result})
+            except HTTPException as error:
+                report("error", error.detail)
+            except Exception:
+                log.exception("Editor setup stream failed")
+                report("error", "Could not start the editor. Please retry.")
+
+        task = asyncio.create_task(provision())
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(events.get(), timeout=10)
+                except TimeoutError:
+                    yield ": heartbeat\n\n"
+                    continue
+                yield "data: " + json.dumps(event) + "\n\n"
+                if event["type"] in {"ready", "error"}:
+                    break
+        finally:
+            task.cancel()
+            with anyio.CancelScope(shield=True):
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+    return StreamingResponse(
+        stream(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"}
+    )
 
 
-async def provision_editor(id, claim):
+async def provision_editor(id, claim, report=None):
     created = None
     try:
         row = await get_notebook(id)
@@ -165,7 +214,11 @@ async def provision_editor(id, claim):
             except Exception:
                 # Preserve the previous session on transient provider errors.
                 raise HTTPException(502, "Could not reach the editor. Try again shortly.") from None
-        created = await editor.start(row["source"])
+        created = (
+            await editor.start(row["source"], report)
+            if report
+            else await editor.start(row["source"])
+        )
         async with engine.begin() as conn:
             result = await conn.execute(
                 update(notebooks)
@@ -177,10 +230,13 @@ async def provision_editor(id, claim):
         return created
     except HTTPException:
         raise
-    except Exception:
+    except BaseException as error:
         log.exception("Could not start editor")
         if created:
-            await editor.stop(created)
+            with anyio.CancelScope(shield=True):
+                await editor.stop(created)
+        if isinstance(error, asyncio.CancelledError):
+            raise
         raise HTTPException(
             502, "Could not start Jupyter. Check Sandbox configuration and retry."
         ) from None
@@ -200,9 +256,9 @@ async def save(id: str, body: EditorRequest):
         return await save_draft(id, body)
 
 
-async def save_draft(id: str, body: EditorRequest):
+async def save_draft(id: str, body: EditorRequest, *, closing=False):
     row, current = await checked_editor(id, body.token)
-    source = await editor.read(current)
+    source = await editor.read(current, extend=False) if closing else await editor.read(current)
     validate(source)
     values = {"source": source}
     if body.publish:
@@ -219,19 +275,27 @@ async def save_draft(id: str, body: EditorRequest):
 
 
 @app.post("/api/notebooks/{id}/close", dependencies=[Depends(require_owner)])
-async def close(id: str, body: EditorRequest):
+async def close(id: str, body: EditorRequest, background_tasks: BackgroundTasks):
     async with editor_lease(id):
         row, current = await checked_editor(id, body.token)
         # Saving first means a failed persistence operation never destroys the draft.
-        await save_draft(id, body)
-        await editor.stop(current)
+        await save_draft(id, body, closing=True)
         async with engine.begin() as conn:
             await conn.execute(
                 update(notebooks)
                 .where(notebooks.c.id == id, notebooks.c.editor == row["editor"])
                 .values(editor=None)
             )
+        background_tasks.add_task(stop_closed_editor, current)
         return {"closed": True}
+
+
+async def stop_closed_editor(current):
+    try:
+        await editor.stop(current)
+    except Exception:
+        # The draft is durable and the session detached; its timeout bounds cleanup failures.
+        log.exception("Could not stop closed editor")
 
 
 @app.get("/api/health")

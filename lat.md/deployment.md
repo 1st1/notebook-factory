@@ -1,0 +1,111 @@
+# Deployment and operation
+
+The app deploys from the repository root as two Vercel Services, with Neon Postgres for persistence and Vercel Sandbox for notebook execution.
+
+## Production project
+
+The configured production application is [notebook-factory-green.vercel.app](https://notebook-factory-green.vercel.app), under the Vercel team `yury-selivanovs-projects`.
+
+| Setting | Project value |
+| --- | --- |
+| Git repository | `https://github.com/1st1/notebook-factory` |
+| Local Git remote | `up` |
+| Vercel project | `notebook-factory` |
+| Project ID | `prj_6Q4NWdJ0w3VHaXshi9MoWKwhdPhP` |
+| Team ID | `team_7scPglQEOz4JjqD4f08fLr7z` |
+| Database | Connected Neon Marketplace integration |
+| Application owner | GitHub login `1st1` |
+
+These are the project details verified during setup on October 1, 2026. Local linkage lives in the ignored `.vercel/project.json`. Production has been deployed directly from the working tree with the CLI; a successful deployment does not imply those changes have been committed or pushed.
+
+The production alias is public. Unique deployment URLs have Vercel deployment protection, so use the canonical alias for public checks and OAuth. See [[architecture#Services]] for routing and function configuration.
+
+## Environment configuration
+
+[[backend/config.py]] validates deployment settings, and [backend/.env.example](../backend/.env.example) lists backend variables. Secrets belong in Vercel environment settings or ignored local environment files.
+
+| Variable | Purpose |
+| --- | --- |
+| `APP_URL` | Canonical app origin; production uses `https://notebook-factory-green.vercel.app` |
+| `SESSION_SECRET` | Random signing secret, at least 32 characters in deployment |
+| `DATABASE_URL` | Neon/Postgres connection URL with TLS options |
+| `GITHUB_CLIENT_ID` | OAuth application client ID |
+| `GITHUB_CLIENT_SECRET` | OAuth application secret |
+| `VERCEL_OIDC_TOKEN` | Request-scoped Sandbox identity in deployment, or an explicitly loaded local token |
+| `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID` | Alternative backend-only Sandbox credentials for local use |
+
+The production GitHub OAuth homepage is the canonical app origin; its callback is `https://notebook-factory-green.vercel.app/api/auth/callback`. Origin checks and iframe configuration also depend on the same APP_URL. Preview editing requires a matching origin, OAuth configuration, and environment scope.
+
+[[backend/main.py#headers]] installs the incoming request headers in the Vercel HeadersContext so the SDK can use deployment OIDC. The project needs Sandbox access and OIDC support. No static Vercel token is required in the deployed app.
+
+The backend loads `backend/.env`; it does not automatically load a root `.env.local` produced by CLI environment commands. Load or export that file explicitly when using its credentials locally. Never put backend secrets in `VITE_*` variables, which are client-visible.
+
+Marketplace connection supplies the database variables. The application reads DATABASE_URL, not the other provider-specific aliases. Required environment changes take effect in a new deployment. Startup creates missing tables automatically; future schema changes need an explicit migration strategy.
+
+## Local development
+
+[[frontend/vite.config.ts]] proxies browser `/api` requests to FastAPI on port 8000. The standard local app origin is `http://localhost:5173`.
+
+From the repository root:
+
+```sh
+cp backend/.env.example backend/.env
+uv sync --project backend
+npm ci --prefix frontend
+```
+
+Configure a local GitHub OAuth application with callback `http://localhost:5173/api/auth/callback`, then run these in separate terminals:
+
+```sh
+cd backend
+uv run uvicorn main:app --reload --port 8000
+```
+
+```sh
+npm run dev --prefix frontend
+```
+
+Local SQLite needs no service provisioning. Live editing still requires Sandbox credentials. The Python package supports 3.12+, while the checked-in version file selects 3.13. Vite requires a compatible Node runtime; setup used Node 24.
+
+For the Vercel local gateway, use the verified published CLI and match OAuth to port 3000:
+
+```sh
+APP_URL=http://localhost:3000 VERCEL_ENV=development npx vercel@62.1.0 dev -L
+```
+
+## Deploy procedure
+
+[vercel.json](../vercel.json) is the deployable Services definition. Published Vercel CLI 62.1.0 was verified; the previously installed custom 50.37.2 build rejected this Services configuration.
+
+Run from the repository root, retaining the existing project link:
+
+```sh
+npx vercel@62.1.0 link
+npx vercel@62.1.0 env ls production
+npx vercel@62.1.0 deploy --prod --yes
+```
+
+Linking is only needed on an unlinked checkout. Set or connect required environment variables before deploying. Use the root as the Vercel project directory, not the frontend or backend subdirectory. Dependency lockfiles and bundled templates must be included in the deployment.
+
+After deployment, confirm the production alias serves the updated frontend and `/api/health` returns 200. Follow [[verification#Live checks]] to validate database, OAuth, streaming, and actual notebook execution; liveness alone does not cover them.
+
+## Troubleshooting
+
+Use production request logs to distinguish function initialization, rendering, Sandbox provisioning, and browser bridge failures. [[editing]] describes the boundaries between those operations.
+
+```sh
+npx vercel@62.1.0 logs --environment production --since 10m --limit 100 --json
+```
+
+| Symptom | Checks grounded in the implementation |
+| --- | --- |
+| Root page is a Vercel 404 | Repository root selected; both Services present; frontend catch-all is `/(.*)` |
+| API initialization fails | Required secret, HTTPS APP_URL, durable DATABASE_URL, and correct environment scope |
+| Render endpoint returns 500 | Bundled templates deployed and explicit nbconvert template paths intact |
+| OAuth/origin rejection | OAuth callback, APP_URL, browser origin, session, and owner login agree |
+| Setup stops or errors | Live stage/output, OIDC/Sandbox access, install deadline, Jupyter readiness logs |
+| Editor operation returns 409 | Another operation owns the lease or the editor token is stale |
+| Editor returns 410 | Sandbox expired/unavailable; reopen from the last durable draft |
+| Close feels slow | Notebook save and database persistence precede success; Sandbox shutdown runs afterward |
+
+Jupyter output is redirected to `.jupyter.log` inside the Sandbox. Startup failures retain a bounded excerpt and redact the capability token there. General SDK HTTP logs can still contain sensitive capability URLs; redact them before sharing. Do not restart or stop an active user Sandbox merely to inspect it.

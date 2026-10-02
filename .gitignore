@@ -12,3 +12,7 @@ dist/
 *.db-*
 .DS_Store
 *.tsbuildinfo
+.vercel
+.env*.local
+.lat-build
+.codex

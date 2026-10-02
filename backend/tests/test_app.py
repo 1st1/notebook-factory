@@ -168,3 +168,104 @@ def test_simultaneous_editor_start_is_serialized(client, monkeypatch):
         finally:
             release.set()
         assert first.result().status_code == 200
+
+
+def test_render_without_system_jupyter_templates(monkeypatch):
+    from nbconvert.exporters.templateexporter import TemplateExporter
+
+    from render import render
+
+    monkeypatch.setattr(TemplateExporter, "get_prefix_root_dirs", lambda self: [])
+    html = render(new_notebook("Bundled templates"))
+    assert "Bundled templates" in html
+    assert "Hello, notebook." in html
+    assert "jp-Notebook" in html
+
+
+def test_launcher_paths_follow_remote_script_location(tmp_path, monkeypatch):
+    import runpy
+    import sqlite3
+    import sys
+    from pathlib import Path
+    from types import ModuleType
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    launcher = workspace / ".notebook-editor.py"
+    launcher.write_text((Path(main.__file__).parent / "assets/jupyter_launcher.py").read_text())
+    module = ModuleType("jupyterlab.labapp")
+    observed = []
+    module.main = lambda: observed.extend(sys.argv) or 0
+    monkeypatch.setitem(sys.modules, "pysqlite3", sqlite3)
+    monkeypatch.setitem(sys.modules, "jupyterlab.labapp", module)
+    monkeypatch.setattr(sys, "argv", [str(launcher), "notebook.ipynb"])
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as result:
+        runpy.run_path(str(launcher), run_name="__main__")
+    assert result.value.code == 0
+    assert f"--LabApp.templates_dir={workspace}/.jupyter/templates" in observed
+    assert f"--LabApp.user_settings_dir={workspace}/.jupyter/lab/user-settings" in observed
+    assert f"--ServerApp.root_dir={workspace}" in observed
+
+
+def test_setup_stream_progress_ready_and_reuse(client, monkeypatch):
+    import json
+
+    id = create(client)
+    result = {"name": "streamed", "url": "https://example.test/editor", "token": "t"}
+
+    async def start(source, report):
+        report("progress", "Installing Python and JupyterLab…")
+        report("log", "Installing ipykernel\n")
+        return result
+
+    monkeypatch.setattr(main.editor, "start", start)
+    response = client.post(f"/api/notebooks/{id}/editor", headers={"Accept": "text/event-stream"})
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = [
+        json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")
+    ]
+    assert any(e.get("message") == "Installing ipykernel\n" for e in events)
+    assert events[-1] == {"type": "ready", "editor": result}
+    monkeypatch.setattr(main.editor, "read", AsyncMock(return_value=new_notebook("Saved")))
+    response = client.post(f"/api/notebooks/{id}/editor", headers={"Accept": "text/event-stream"})
+    assert '"type": "ready"' in response.text
+
+
+def test_setup_stream_failure_releases_lease(client, monkeypatch):
+    id = create(client)
+    monkeypatch.setattr(
+        main.editor, "start", AsyncMock(side_effect=RuntimeError("private details"))
+    )
+    for _ in range(2):
+        response = client.post(
+            f"/api/notebooks/{id}/editor", headers={"Accept": "text/event-stream"}
+        )
+        assert '"type": "error"' in response.text
+        assert "private details" not in response.text
+        assert "Could not start Jupyter" in response.text
+    client.cookies.clear()
+    assert (
+        client.post(
+            f"/api/notebooks/{id}/editor", headers={"Accept": "text/event-stream"}
+        ).status_code
+        == 401
+    )
+
+
+def test_close_detaches_before_background_shutdown(client, monkeypatch):
+    id = create(client)
+    result = {"name": "closing", "url": "https://example.test/editor", "token": "t"}
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value=result))
+    monkeypatch.setattr(main.editor, "read", AsyncMock(return_value=new_notebook("Durable draft")))
+    client.post(f"/api/notebooks/{id}/editor")
+
+    async def stop(current):
+        row = await main.get_notebook(id)
+        assert row["editor"] is None
+        assert "Durable draft" in row["source"]
+        raise RuntimeError("Shutdown unavailable")
+
+    monkeypatch.setattr(main.editor, "stop", stop)
+    assert client.post(f"/api/notebooks/{id}/close", json={"token": "t"}).json() == {"closed": True}
+    main.editor.read.assert_awaited_once_with(result, extend=False)

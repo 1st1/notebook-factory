@@ -680,3 +680,23 @@ footer > span:last-child {
     transition: none !important;
   }
 }
+
+.setup-progress {
+  margin-bottom: 20px;
+  border: 1px solid var(--line, #dde1d5);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.setup-progress .progress { margin: 0; padding: 16px 20px; }
+.setup-progress .progress small { margin-left: auto; white-space: nowrap; }
+.setup-output {
+  margin: 0;
+  padding: 16px 20px;
+  max-height: 200px;
+  overflow: auto;
+  background: #252b23;
+  color: #e2e8d9;
+  font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

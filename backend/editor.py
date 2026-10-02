@@ -1,6 +1,8 @@
 """Jupyter runs in Sandbox; its WebSockets connect directly from the iframe."""
 
+import io
 import json
+import re
 import secrets
 from pathlib import Path
 
@@ -16,13 +18,35 @@ ASSETS = Path(__file__).with_name("assets")
 PORT = 8888
 
 
-async def start(source: str):
+class SetupOutput(io.TextIOBase):
+    def __init__(self, report):
+        self.report = report
+        self.tail = ""
+        self.sent = 0
+
+    def writable(self):
+        return True
+
+    def write(self, text):
+        clean = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+        self.tail = (self.tail + clean)[-3000:]
+        if self.sent < 100_000:
+            chunk = clean[: 100_000 - self.sent]
+            self.report("log", chunk)
+            self.sent += len(chunk)
+        return len(text)
+
+
+async def start(source: str, report=lambda kind, message: None):
     token = secrets.token_urlsafe(32)
     name = "nf-" + secrets.token_hex(12)
     async with session():
+        report("progress", "Creating your Sandbox…")
         instance = await sandbox.create_sandbox(name=name, ports=[PORT], execution_time_limit=900)
         try:
             await instance.fs.write_text("notebook.ipynb", source)
+            report("progress", "Installing Python and JupyterLab…")
+            output = SetupOutput(report)
             install = await instance.run_process(
                 "sh",
                 [
@@ -30,11 +54,13 @@ async def start(source: str):
                     '(command -v uv || python3 -m pip install "uv>=0.8,<1") && '
                     'uv venv --python 3.13 .venv && uv pip install --python .venv/bin/python "jupyterlab==4.4.10" "pysqlite3-binary==0.5.4.post2"',
                 ],
-                capture_output=True,
+                stdout=output,
+                stderr=output,
                 kill_after=220,
             )
             if install.returncode:
-                raise RuntimeError("Jupyter dependency installation failed")
+                raise RuntimeError(f"Jupyter dependency installation failed: {output.tail}")
+            report("progress", "Configuring the notebook editor…")
             for filename, target in {
                 "jupyter_launcher.py": ".notebook-editor.py",
                 "patch_jupyter_template.py": ".patch-jupyter-template.py",
@@ -76,12 +102,17 @@ async def start(source: str):
                 ".venv/bin/python", [".patch-jupyter-template.py"], capture_output=True
             )
             if patch.returncode:
-                raise RuntimeError("Jupyter template patch failed")
+                raise RuntimeError(f"Jupyter template patch failed: {patch.stderr[-3000:]}")
+            report("progress", "Starting JupyterLab…")
             # A random 256-bit base path is the capability protecting all HTTP and WS routes.
             # This avoids third-party cookie dependencies in embedded Jupyter.
             await instance.create_process(
-                ".venv/bin/python",
+                "sh",
                 [
+                    "-c",
+                    'exec "$@" > .jupyter.log 2>&1',
+                    "notebook-factory",
+                    ".venv/bin/python",
                     ".notebook-editor.py",
                     "--ip=0.0.0.0",
                     f"--port={PORT}",
@@ -92,8 +123,6 @@ async def start(source: str):
                     "--IdentityProvider.token=",
                     "--ServerApp.password=",
                     "--LabApp.expose_app_in_browser=True",
-                    "--LabApp.user_settings_dir=/vercel/sandbox/.jupyter/lab/user-settings",
-                    "--LabApp.templates_dir=/vercel/sandbox/.jupyter/templates",
                     f"--ServerApp.base_url=/{token}/",
                     "--ServerApp.tornado_settings="
                     + json.dumps(
@@ -109,6 +138,7 @@ async def start(source: str):
             )
             route = next(route.url.rstrip("/") for route in instance.routes if route.port == PORT)
             url = f"{route}/{token}/doc/tree/notebook.ipynb"
+            report("progress", "Waiting for JupyterLab to respond…")
             async with httpx.AsyncClient(timeout=3, follow_redirects=True) as client:
                 deadline = anyio.current_time() + 45
                 while anyio.current_time() < deadline:
@@ -119,14 +149,17 @@ async def start(source: str):
                     except httpx.HTTPError:
                         pass
                     await anyio.sleep(0.5)
-            raise RuntimeError("Jupyter startup timed out")
+            output = await instance.fs.read_text(".jupyter.log")
+            raise RuntimeError(
+                "Jupyter startup timed out: " + output[-6000:].replace(token, "[redacted]")
+            )
         except BaseException:
             with anyio.CancelScope(shield=True):
                 await instance.stop()
             raise
 
 
-async def read(editor: dict):
+async def read(editor: dict, *, extend=True):
     async with session():
         try:
             instance = await sandbox.get_sandbox(name=editor["name"])
@@ -148,7 +181,8 @@ async def read(editor: dict):
                     body.extend(chunk)
                     if len(body) > MAX_BYTES:
                         raise HTTPException(413, "Notebook exceeds 10 MB")
-        await current.extend_execution_time_limit(30)
+        if extend:
+            await current.extend_execution_time_limit(30)
         return body.decode()
 
 

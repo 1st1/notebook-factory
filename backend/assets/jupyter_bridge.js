@@ -133,11 +133,11 @@
 
           try {
             var app = window.jupyterapp;
-            await app.restored;
             var widget = app.shell.currentWidget;
             if (!widget || !widget.context || widget.context.path !== "notebook.ipynb") {
               throw new Error("Select notebook.ipynb before saving.");
             }
+            await widget.context.ready;
             await widget.context.save();
             event.source.postMessage({ type: "vercel-notebook-saved", id: data.id }, event.origin);
           } catch (error) {
