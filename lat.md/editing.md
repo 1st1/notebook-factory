@@ -60,3 +60,11 @@ Closing skips the unnecessary Sandbox time extension. The iframe is detached aft
 Background shutdown errors are logged; the Sandbox execution limit bounds its remaining lifetime. This background task is not a durable job queue. Reopening after close provisions a fresh environment from the stored draft.
 
 Notebook documents and their saved outputs persist. Kernel memory, uploaded side files, and extra installed dependencies do not. Closing the browser stops app autosaves/heartbeats, so changes since the last successful durable save can be lost. A before-unload warning is advisory, not persistence.
+
+## Save serialization
+
+The bridge serializes all saves on each Jupyter document context, covering native autosave, toolbar saves, and parent requests. A save finishes its disk write and metadata refresh before the next save begins.
+
+JupyterLab 4.4.10 can otherwise overlap these operations: a second save reads a new disk hash before the first save updates the context hash, producing a false File Changed dialog. This was reproduced with one page and no external writer in a disposable Sandbox.
+
+The queue preserves errors for the requesting caller and continues after a rejected save. It does not disable Jupyter's conflict checks or automatically overwrite external changes. The bridge is installed during Sandbox startup, so existing editors need a saved close and reopen to receive it.

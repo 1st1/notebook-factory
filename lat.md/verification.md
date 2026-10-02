@@ -13,6 +13,7 @@ uv run --project backend pytest backend/tests -q
 uv run --project backend ruff check backend
 uv run --project backend ruff format --check backend
 npm run build --prefix frontend
+node --test backend/tests/test_save_bridge.cjs
 lat check
 ```
 
@@ -21,6 +22,8 @@ The current suite produces 16 passing test cases, including parameterized author
 Coverage includes owner/origin enforcement, invalid sessions and OAuth state, draft/public separation, stale capabilities, close/reopen, failed saves, startup failure cleanup, expiry recovery, and concurrent startup serialization. Rendering tests simulate absent system templates; launcher tests check location-relative paths.
 
 Progress tests check installer events, final editor delivery, reuse, failure messages, lease release, and anonymous rejection. The close test verifies that the draft is durable and the editor record cleared before shutdown, including a shutdown failure that must not undo the saved result.
+
+[Save bridge tests](../backend/tests/test_save_bridge.cjs) checks that native and parent save requests share a queue, acknowledgements follow completion, and a rejected save does not block later saves.
 
 ## Browser checks
 

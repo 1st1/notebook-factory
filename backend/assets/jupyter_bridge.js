@@ -12,6 +12,35 @@
         var focusedLayoutTimeout;
         var fitFrame;
         var fitTimeouts = [];
+        var serializedContexts = new WeakSet();
+
+        function serializeSaves(context) {
+          if (!context || serializedContexts.has(context)) return;
+          serializedContexts.add(context);
+          var save = context.save.bind(context);
+          var tail = Promise.resolve();
+          // Native autosave, toolbar saves, and parent saves share this context.
+          // Finish the disk write AND metadata refresh before the next save starts.
+          context.save = function () {
+            var pending = tail.then(function () { return save(); });
+            tail = pending.catch(function () {});
+            return pending;
+          };
+        }
+
+        function waitForNotebookContext() {
+          var app = window.jupyterapp;
+          var widget = app && app.shell && app.shell.currentWidget;
+          if (!widget || !widget.context) {
+            window.setTimeout(waitForNotebookContext, 50);
+            return;
+          }
+          serializeSaves(widget.context);
+          app.shell.currentChanged.connect(function () {
+            var current = app.shell.currentWidget;
+            if (current) serializeSaves(current.context);
+          });
+        }
 
         function fitJupyterLayout() {
           if (!jupyterApp || !jupyterApp.shell) return;
@@ -119,6 +148,7 @@
         }
         new ResizeObserver(scheduleJupyterFit).observe(document.documentElement);
         waitForJupyterApp();
+        waitForNotebookContext();
 
         window.addEventListener("message", async function (event) {
           var data = event.data;
@@ -138,6 +168,7 @@
               throw new Error("Select notebook.ipynb before saving.");
             }
             await widget.context.ready;
+            serializeSaves(widget.context);
             await widget.context.save();
             event.source.postMessage({ type: "vercel-notebook-saved", id: data.id }, event.origin);
           } catch (error) {
