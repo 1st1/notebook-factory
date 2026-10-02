@@ -40,7 +40,7 @@ The production GitHub OAuth homepage is the canonical app origin; its callback i
 
 The backend loads `backend/.env`; it does not automatically load a root `.env.local` produced by CLI environment commands. Load or export that file explicitly when using its credentials locally. Never put backend secrets in `VITE_*` variables, which are client-visible.
 
-Marketplace connection supplies the database variables. The application reads DATABASE_URL, not the other provider-specific aliases. Required environment changes take effect in a new deployment. Startup creates missing tables automatically; future schema changes need an explicit migration strategy.
+Marketplace connection supplies the database variables. The application reads DATABASE_URL, not the other provider-specific aliases. Required environment changes take effect in a new deployment. Startup creates missing tables and adds the published HTML column to existing tables. Existing publications backfill HTML on first read. Other future schema changes need an explicit migration strategy.
 
 ## Local development
 

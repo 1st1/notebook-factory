@@ -6,7 +6,7 @@ A public Python notebook library with GitHub-owner-only editing. React and FastA
 
 [[frontend/src/main.tsx]] provides notebook navigation, title search, creation, public rendering, downloads, and an embedded editor for GitHub user 1st1.
 
-The selected notebook is reflected in the `notebook` URL query parameter. Public readers see published content; owner edits remain private until Publish. Creation immediately publishes the starter notebook at revision 1. There is no separate unpublished-notebook state.
+The selected notebook is reflected in the `notebook` URL query parameter. Public readers see published content; owner edits remain private until Save & exit. Creation immediately publishes the starter notebook at revision 1. There is no separate unpublished-notebook state.
 
 Titles are set at creation. Rename, deletion, notebook upload, revision history, and collaborative editing are not implemented. A revision is a counter, not a stored historical snapshot. [[editing]] describes the editor lifecycle.
 
@@ -29,11 +29,12 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 | `id`, `title` | UUID identity and creation-time display title |
 | `source` | Latest durable private draft, including saved cell outputs |
 | `published` | Notebook document exposed by public render and download endpoints |
+| `published_html` | Pre-rendered HTML for the same published revision; nullable for legacy rows |
 | `created_at`, `updated_at`, `revision` | Creation/publication metadata; draft saves do not change publication time |
 | `editor` | Nullable JSON containing Sandbox name, editor URL, and capability token |
 | `claim`, `claim_until` | Atomic operation lease shared across function instances |
 
-[[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. This is schema initialization, not a migration framework. The engine uses NullPool rather than retaining connections in a function-local pool.
+[[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. Initialization also adds the nullable published HTML column to existing tables. This targeted upgrade is not a general migration framework. The engine uses NullPool rather than retaining connections in a function-local pool.
 
 [[backend/config.py]] normalizes conventional Postgres URLs for asyncpg, maps `sslmode` to `ssl`, and removes libpq's `channel_binding` option. Deployment startup rejects missing or non-Postgres database configuration.
 
@@ -41,11 +42,11 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 
 ## Public rendering
 
-[[backend/render.py#render]] converts the published notebook to HTML with nbconvert without executing cells. [[backend/render.py#validate]] enforces valid notebook structure and the size limit from [[backend/config.py#MAX_BYTES]].
+[[backend/render.py#render]] converts notebooks to HTML during creation and publication. Public views serve stored HTML without executing cells or running nbconvert. [[backend/render.py#validate]] enforces valid notebook structure and the size limit from [[backend/config.py#MAX_BYTES]].
 
 Lab and base templates are bundled in [backend/templates](../backend/templates), with explicit template search paths. Functions cannot rely on system-installed Jupyter data directories. Public downloads also return `published`, even for the signed-in owner.
 
-The rendered iframe and API response both enforce sandboxing. The CSP blocks network connections and nested frames while permitting selected script CDNs, styles, fonts, and images. Some interactive outputs therefore do not work publicly. HTML conversion runs off the API event loop.
+The rendered iframe and API response both enforce sandboxing. The CSP blocks network connections and nested frames while permitting selected script CDNs, styles, fonts, and images. Some interactive outputs therefore do not work publicly. HTML conversion runs off the API event loop. Source, HTML, and revision are published in one transaction; rendering failure preserves the prior publication. Legacy rows render once on first read, with a revision-guarded cache write that cannot overwrite a newer publication. Notebook listings select metadata only.
 
 ## Authentication
 
@@ -70,6 +71,7 @@ Public notebook metadata excludes drafts, editor capabilities, and leases. Respo
 | `POST /api/notebooks/{id}/editor` | Owner opens/reuses an editor; JSON or event stream depending on Accept |
 | `POST /api/notebooks/{id}/save` | Validates session token, persists draft, optionally publishes |
 | `POST /api/notebooks/{id}/close` | Persists draft, detaches editor, schedules Sandbox shutdown |
+| `POST /api/notebooks/{id}/discard` | Discards draft, restores published source, and schedules shutdown |
 | `GET /api/auth/me` | Identity, edit permission, and OAuth configuration status |
 | `GET /api/health` | Process liveness only; does not query Postgres or Sandbox |
 

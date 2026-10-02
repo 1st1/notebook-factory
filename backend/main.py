@@ -67,7 +67,15 @@ def public(row):
 async def list_notebooks():
     async with engine.connect() as conn:
         rows = (
-            await conn.execute(select(notebooks).order_by(notebooks.c.updated_at.desc()))
+            await conn.execute(
+                select(
+                    notebooks.c.id,
+                    notebooks.c.title,
+                    notebooks.c.created_at,
+                    notebooks.c.updated_at,
+                    notebooks.c.revision,
+                ).order_by(notebooks.c.updated_at.desc())
+            )
         ).mappings()
         return [public(row) for row in rows]
 
@@ -83,6 +91,7 @@ async def create_notebook(body: CreateNotebook):
         title=title,
         source=source,
         published=source,
+        published_html=await anyio.to_thread.run_sync(render, source),
         created_at=timestamp(),
         updated_at=timestamp(),
         revision=1,
@@ -94,12 +103,27 @@ async def create_notebook(body: CreateNotebook):
 
 @app.get("/api/notebooks/{id}/render")
 async def rendered(id: str):
-    row = await get_notebook(id)
-    try:
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(select(notebooks.c.published_html).where(notebooks.c.id == id))
+        ).first()
+    if row is None:
+        raise HTTPException(404, "Notebook not found")
+    html = row.published_html
+    if html is None:
+        # Legacy rows are rendered once. Never attach an old render to a newer publication.
+        row = await get_notebook(id)
         html = await anyio.to_thread.run_sync(render, row["published"])
-    except Exception:
-        log.exception("Notebook rendering failed for %s", id)
-        raise
+        async with engine.begin() as conn:
+            await conn.execute(
+                update(notebooks)
+                .where(
+                    notebooks.c.id == id,
+                    notebooks.c.revision == row["revision"],
+                    notebooks.c.published_html.is_(None),
+                )
+                .values(published_html=html)
+            )
     return HTMLResponse(
         html,
         headers={
@@ -262,7 +286,13 @@ async def save_draft(id: str, body: EditorRequest, *, closing=False):
     validate(source)
     values = {"source": source}
     if body.publish:
-        values.update(published=source, updated_at=timestamp(), revision=notebooks.c.revision + 1)
+        html = await anyio.to_thread.run_sync(render, source)
+        values.update(
+            published=source,
+            published_html=html,
+            updated_at=timestamp(),
+            revision=notebooks.c.revision + 1,
+        )
     async with engine.begin() as conn:
         result = await conn.execute(
             update(notebooks)
@@ -288,6 +318,20 @@ async def close(id: str, body: EditorRequest, background_tasks: BackgroundTasks)
             )
         background_tasks.add_task(stop_closed_editor, current)
         return {"closed": True}
+
+
+@app.post("/api/notebooks/{id}/discard", dependencies=[Depends(require_owner)])
+async def discard(id: str, body: EditorRequest, background_tasks: BackgroundTasks):
+    async with editor_lease(id):
+        row, current = await checked_editor(id, body.token)
+        async with engine.begin() as conn:
+            await conn.execute(
+                update(notebooks)
+                .where(notebooks.c.id == id, notebooks.c.editor == row["editor"])
+                .values(source=notebooks.c.published, editor=None)
+            )
+        background_tasks.add_task(stop_closed_editor, current)
+        return {"closed": True, "discarded": True}
 
 
 async def stop_closed_editor(current):

@@ -2,7 +2,6 @@ from pathlib import Path
 
 import nbformat
 from fastapi import HTTPException
-from nbconvert import HTMLExporter
 
 from config import MAX_BYTES
 
@@ -19,6 +18,8 @@ def validate(source: str):
 
 
 def render(source: str):
+    from nbconvert import HTMLExporter
+
     templates = str(Path(__file__).with_name("templates"))
     exporter = HTMLExporter(
         template_name="lab",

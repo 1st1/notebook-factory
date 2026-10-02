@@ -5,7 +5,7 @@ A public library of Python notebooks, with a focused JupyterLab editor available
 - React sidebar, search, notebook creation, rendered cells and outputs, and `.ipynb` downloads.
 - GitHub OAuth with signed, expiring HttpOnly cookies and server-side owner/origin checks.
 - JupyterLab in Vercel Sandbox, provisioned exclusively through the **Python Sandbox SDK**.
-- Private drafts autosave every 30 seconds. **Publish** updates the public notebook; **Close editor** saves and stops the sandbox.
+- Private drafts autosave every 30 seconds. **Save & exit** pre-renders and publishes the notebook, then closes the editor; **Exit** discards the draft and restores the published version.
 - Postgres persistence on Vercel; SQLite for local development. Sandbox files and kernels are temporary. Only the notebook document and its outputs are restored when a new sandbox starts.
 
 ## Run locally
@@ -51,15 +51,15 @@ The root `vercel.json` defines two [Vercel Services](https://vercel.com/docs/ser
 2. Connect a Postgres database (for example Neon through Vercel Marketplace). Set `DATABASE_URL` to its connection URL, including TLS options. Tables are initialized automatically with a Postgres advisory lock protecting concurrent cold starts.
 3. Set `APP_URL` to the canonical HTTPS origin, `SESSION_SECRET` to a cryptographically random value of at least 32 characters, and `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` to your GitHub OAuth App credentials. Register `${APP_URL}/api/auth/callback` as the OAuth callback. Use a separate OAuth app/origin for preview environments if editing there is needed.
 4. Enable the project's Vercel OIDC token support and Sandbox access. The Python SDK uses the request-scoped token; a static Vercel token is unnecessary in production.
-5. Deploy with `vercel --prod`. The API function has a 300-second startup budget. Verify `/api/health`, sign in as `1st1`, create a notebook, edit/run a cell, publish, and view it signed out.
+5. Deploy with `vercel --prod`. The API function has a 300-second startup budget. Verify `/api/health`, sign in as `1st1`, create a notebook, edit/run a cell, Save & exit, and view it signed out.
 
-The frontend never receives database credentials or GitHub access tokens. Anyone can read **published** notebooks, so do not publish secret outputs. The editor URL is an unguessable, per-session capability and is returned only after owner authorization. Treat it like a password. Closing an editor stops that capability's server; signed-out readers never get an editor URL. Logout is disabled while editing; close the editor first.
+The frontend never receives database credentials or GitHub access tokens. Anyone can read **published** notebooks, so do not publish secret outputs. The editor URL is an unguessable, per-session capability and is returned only after owner authorization. Treat it like a password. Leaving editing schedules that capability's server for shutdown; signed-out readers never get an editor URL. Logout is disabled while editing; close the editor first.
 
 ## Editing lifecycle
 
 First startup installs Python 3.13 and pinned JupyterLab 4.4.10 in a Sandbox virtual environment. The embedded layout and template bridge were adapted from `vercel-py` branch `nb_next`, commit `8296336`. Their original MIT license is in `backend/assets/LICENSE`.
 
-The bridge checks the parent origin, message source, and session capability, then awaits Jupyter's document save API. The backend reads and validates `notebook.ipynb` before storing it. Rendering uses nbconvert without executing code and is isolated by both iframe sandboxing and a response CSP.
+The bridge checks the parent origin, message source, and session capability, then awaits Jupyter's document save API. The backend reads and validates `notebook.ipynb` before storing it. Creation and publication pre-render HTML with nbconvert and store it in Postgres; public views serve that HTML without converting again. Rendering never executes code and is isolated by iframe sandboxing and a response CSP.
 
 A database lease serializes editor operations across function instances. Existing live editors are reused. A closed or expired sandbox is recreated from the durable draft. The sandbox starts with a 15-minute limit; active draft saves extend it by 30 seconds. Closing the browser stops heartbeats, allowing the sandbox to expire. Up to the last 30 seconds of changes can be lost if the browser or sandbox disappears before the next durable save. Uploaded files, extra installed dependencies, and kernel memory are not persisted.
 

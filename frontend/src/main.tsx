@@ -232,6 +232,22 @@ function App() {
     [editor, selected, saveBridge, refresh],
   );
 
+  async function discardEditor() {
+    if (!editor || !selected) return;
+    while (saving.current)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    saving.current = true;
+    setClosing(true);
+    try {
+      await api(`/notebooks/${selected}/discard`, { token: editor.token });
+      setEditor(null);
+      setSaved("");
+    } finally {
+      setClosing(false);
+      saving.current = false;
+    }
+  }
+
   useEffect(() => {
     if (!editor) return;
     const interval = setInterval(() => {
@@ -479,21 +495,19 @@ function App() {
                           className="button"
                           disabled={!!busy}
                           onClick={() =>
-                            action("Saving and closing…", () =>
-                              persist(false, true),
-                            )
+                            action("Discarding draft…", discardEditor)
                           }
                         >
-                          Close editor
+                          Exit
                         </button>
                         <button
                           className="button primary"
                           disabled={!!busy}
                           onClick={() =>
-                            action("Publishing…", () => persist(true))
+                            action("Saving and closing…", () => persist(true, true))
                           }
                         >
-                          <ArrowUpRight size={16} /> Publish
+                          <ArrowUpRight size={16} /> Save &amp; exit
                         </button>
                       </>
                     ))}
@@ -544,7 +558,7 @@ function App() {
                 </span>
               </div>
               {closing ? (
-                <div className="empty" role="status">Saving draft and closing editor…</div>
+                <div className="empty" role="status">Closing editor…</div>
               ) : editor ? (
                 <iframe
                   key={editor.url}

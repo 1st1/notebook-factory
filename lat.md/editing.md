@@ -37,7 +37,7 @@ Each event is a JSON object inside an SSE `data:` frame:
 
 The server sends heartbeat comments every ten seconds while waiting and disables proxy buffering with `X-Accel-Buffering: no`. Authentication and missing-notebook errors happen before streaming; subsequent errors use the event contract.
 
-[[backend/editor.py#SetupOutput]] forwards SDK stdout/stderr, strips ANSI escapes, limits forwarded installation output to 100,000 characters, and retains a bounded diagnostic tail. The browser keeps the last 20,000 characters, scrolls output, and shows elapsed seconds. It retains failed setup output for inspection.
+[[backend/editor.py#SetupOutput]] forwards SDK stdout/stderr, strips ANSI escapes, limits forwarded installation output to 100,000 characters, and retains a bounded diagnostic tail. The browser keeps the last 20,000 characters, scrolls output, and shows elapsed seconds. It retains failed setup output for inspection. The setup panel shares the notebook surface’s responsive horizontal margins, and long log lines wrap within the panel.
 
 The stream owns the provisioning task and cancels it on disconnect. Provisioning and lease cleanup have cancellation handling. Ordinary callers without the streaming Accept header retain the JSON endpoint behavior.
 
@@ -49,9 +49,11 @@ A bridge response must arrive within 20 seconds. Every 30 seconds, the frontend 
 
 [[backend/editor.py#read]] bounds the HTTP read by the notebook size limit, checks session availability, and normally extends Sandbox execution time by 30 seconds. [[backend/main.py#save_draft]] stores the document and outputs; it never executes cells.
 
-Publish copies the same saved document into the public version, increments the revision, updates publication time, and refreshes the rendered iframe. It does not run cells, stop the editor, deploy the application, or retain previous revisions.
+Save & exit renders the saved document once and atomically stores its source and HTML as the public version, increments the revision, updates publication time, and refreshes the rendered iframe. It closes the editor after publication. It does not run cells, deploy the application, or retain previous revisions.
 
 ## Closing and recovery
+
+Exit discards the private draft, including autosaved changes, and restores the last published document through [[backend/main.py#discard]]. It skips Jupyter saving, detaches the session, and schedules shutdown. Save & exit publishes through the close endpoint.
 
 [[backend/main.py#close]] saves the draft and clears the current editor record before returning success. [[backend/main.py#stop_closed_editor]] stops the detached Sandbox as a response background task.
 
@@ -67,4 +69,16 @@ The bridge serializes all saves on each Jupyter document context, covering nativ
 
 JupyterLab 4.4.10 can otherwise overlap these operations: a second save reads a new disk hash before the first save updates the context hash, producing a false File Changed dialog. This was reproduced with one page and no external writer in a disposable Sandbox.
 
-The queue preserves errors for the requesting caller and continues after a rejected save. It does not disable Jupyter's conflict checks or automatically overwrite external changes. The bridge is installed during Sandbox startup, so existing editors need a saved close and reopen to receive it.
+The queue preserves errors for the requesting caller and continues after a rejected save. It does not disable Jupyter's conflict checks or automatically overwrite external changes. The bridge is installed during Sandbox startup, so existing editors need to leave editing and reopen to receive it. Use Save & exit to preserve edits publicly; Exit discards them.
+
+## Upstream integration comparison
+
+The reference is `vercel-py` branch `nb_next`, commit `8296336`, under `src/vercel-notebook/vercel/_notebook`. Its Jupyter assets informed this integration, but its persistence and publication models differ.
+
+The focused CSS, shell panel hiding, resize/refit scheduling, HTML template injection, and SQLite compatibility shim are carried over. Notebook Factory uses a light theme, pins JupyterLab in a virtual environment, and resolves launcher paths relative to the uploaded script.
+
+The reference bridge synthesizes Cmd/Ctrl+S and polls the dirty-tab CSS marker for completion. It has no save serialization or conflict-check override. Notebook Factory instead awaits the document save API, queues saves, and verifies the parent origin as well as the window and token.
+
+The reference requests a named persistent Sandbox with snapshot retention and only uploads the notebook when creating it. It checks for an existing Jupyter process, streams startup process output, and detects early process exit while polling readiness. Notebook Factory uses temporary Sandboxes restored from database drafts and streams installation output; Jupyter logs are retained for startup diagnostics.
+
+Reference publishing verifies hashes of prepared notebook/HTML files and creates a Vercel deployment. Notebook Factory publishes by copying the durable draft to the database's public document. The reference's wildcard origin/frame allowances, hardcoded workspace paths, and keyboard-driven save bridge are not used here.

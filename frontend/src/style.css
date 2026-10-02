@@ -370,8 +370,11 @@ h1 {
   border-radius: 2px;
   background: #d4b46a;
 }
-.notebook-surface {
+.notebook-surface,
+.setup-progress {
   margin: 0 46px;
+}
+.notebook-surface {
   border: 1px solid #e2e5dc;
   border-radius: 7px;
   background: white;
@@ -555,7 +558,8 @@ footer > span:last-child {
     padding-left: 70px;
     padding-right: 70px;
   }
-  .notebook-surface {
+  .notebook-surface,
+  .setup-progress {
     margin-left: 70px;
     margin-right: 70px;
   }
@@ -578,7 +582,8 @@ footer > span:last-child {
   .notebook-heading {
     padding: 30px 26px;
   }
-  .notebook-surface {
+  .notebook-surface,
+  .setup-progress {
     margin: 0 26px;
   }
   .title-row {
@@ -633,7 +638,8 @@ footer > span:last-child {
   .notebook-heading {
     padding: 27px 20px;
   }
-  .notebook-surface {
+  .notebook-surface,
+  .setup-progress {
     margin: 0 12px;
   }
   .metadata {
