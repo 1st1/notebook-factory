@@ -57,6 +57,7 @@ def finish(flow_state, **params):
 def test_pkce_callback_and_session(oauth):
     params, flow = oauth['params'], oauth['flow']
     assert params['scope'] == ['openid profile']
+    assert 'response_mode' not in params
     assert params['code_challenge_method'] == ['S256']
     challenge = base64.urlsafe_b64encode(hashlib.sha256(flow['verifier'].encode()).digest()).rstrip(b'=').decode()
     assert params['code_challenge'] == [challenge]
@@ -100,3 +101,11 @@ def test_github_session_no_longer_authenticates(oauth):
     client = oauth['client']
     client.cookies.set(auth.COOKIE, auth.signer.dumps({'login': '1st1', 'id': 1}, salt='session'))
     assert client.get('/api/auth/me').json()['can_edit'] is False
+
+
+def test_provider_configuration_error_is_not_reported_as_denied(oauth):
+    response = finish(oauth, error='invalid_request')
+    assert response.status_code == 400
+    assert 'invalid_request' in response.json()['detail']
+    assert 'declined' not in response.json()['detail']
+    assert not oauth['requests']

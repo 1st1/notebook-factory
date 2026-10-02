@@ -93,7 +93,7 @@ async def login():
     challenge = base64.urlsafe_b64encode(hashlib.sha256(flow["verifier"].encode()).digest()).rstrip(b"=").decode()
     response = RedirectResponse(AUTHORIZE_URL + "?" + urlencode({
         "client_id": client_id, "redirect_uri": APP_URL + "/api/auth/callback",
-        "response_type": "code", "response_mode": "query", "scope": "openid profile",
+        "response_type": "code", "scope": "openid profile",
         "state": flow["state"], "nonce": flow["nonce"],
         "code_challenge": challenge, "code_challenge_method": "S256",
     }))
@@ -139,7 +139,12 @@ async def callback(request: Request, code: str = "", state: str = "", error: str
         except (BadSignature, ValueError, KeyError, TypeError):
             raise HTTPException(400, "Invalid or expired sign-in state. Please try again.") from None
         if error:
-            raise HTTPException(400, "Vercel sign-in was declined. Please try again.")
+            message = {
+                "access_denied": "Vercel sign-in was declined. Please try again.",
+                "invalid_request": "Vercel rejected the sign-in request (invalid_request). Check the app authentication configuration.",
+                "invalid_scope": "Vercel rejected the requested sign-in scopes (invalid_scope). Enable openid and profile.",
+            }.get(error, "Vercel returned a sign-in error. Please try again.")
+            raise HTTPException(400, message)
         if not code:
             raise HTTPException(400, "Missing authorization code")
         client_id, client_secret = credentials()
