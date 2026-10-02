@@ -672,13 +672,9 @@ function App() {
         </div>
       </aside>
       <main>
-        <button
-          className="icon-button mobile-toggle"
-          aria-label="Open navigation"
-          onClick={() => setMobile(true)}
-        >
-          <Menu size={19} />
-        </button>
+        {!notebook && <button className="button mobile-toggle welcome-menu" aria-label="Open navigation" onClick={() => setMobile(true)}>
+          <Menu size={14} /> Menu
+        </button>}
         {loading ? (
           <div className="empty">
             <LoaderCircle className="spin" />
@@ -752,6 +748,9 @@ function App() {
             <div className="notebook-workspace" style={notebook ? undefined : { display: "none" }}>
             <div className={"notebook-surface " + (activeEditor ? "editing" : "")}>
               <header className="surface-toolbar notebook-toolbar">
+                <button className="button mobile-toggle notebook-menu" aria-label="Open navigation" onClick={() => setMobile(true)}>
+                  <Menu size={14} /> Menu
+                </button>
                 <div className="notebook-panel-title" title={activeEditor ? saved || "Changes save automatically" : `Updated ${date} · Revision ${notebook?.revision}`}>
                   <span className={activeEditor ? "green-dot" : "gray-dot"} />
                   <h1>{notebook?.title}</h1>

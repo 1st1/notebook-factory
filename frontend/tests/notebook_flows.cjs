@@ -148,6 +148,18 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  assert.equal(await amyPage.locator('.owner-toggle').filter({hasText:'1st1'}).getAttribute('aria-expanded'),'false');
  assert(await amyPage.getByRole('button',{name:'Edit notebook',exact:true}).isVisible());
  await amyPage.close();
+ await page.setViewportSize({width:390,height:844});
+ const closeChat=page.getByRole('button',{name:'Close chat',exact:true});
+ if(await closeChat.isVisible())await closeChat.click();
+ const mobileMenu=page.locator('.notebook-toolbar').getByRole('button',{name:'Open navigation'});
+ await mobileMenu.waitFor();
+ assert((await page.locator('.notebook-toolbar').boundingBox()).y<20,'mobile header avoids standalone navigation padding');
+ assert((await mobileMenu.textContent()).includes('Menu'));
+ await mobileMenu.click();
+ assert(await page.locator('.sidebar').evaluate(el=>el.classList.contains('open')));
+ await page.getByRole('button',{name:'Close navigation',exact:true}).click();
+ await page.clock.fastForward(300);
+ await page.locator('.sidebar').evaluate(el=>el.style.transition='none');
  if(process.env.SCREENSHOT_PATH)await page.screenshot({path:process.env.SCREENSHOT_PATH});
  console.log('PASS: automatic saved-chat opening and manual dismissal, nonblocking history loads, view chat and consent, read-only navigation, retained iframe state across notebooks and welcome, multiple live dots, disconnected dot removal, active recovery');
 

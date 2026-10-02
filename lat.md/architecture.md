@@ -181,7 +181,7 @@ Notebook and chat panels share compact, aligned headers; chat actions are groupe
 
 The sidebar uses a green creation button and white search field without shortcut hints. Clicking anywhere in the search field focuses its input. User avatars and notebook icons share a horizontal centerline, with compact user dropdown spacing. Escape dismisses the new-notebook dialog.
 
-A subtle GitHub icon beside the sidebar logo opens the project repository in a new tab. The breadcrumb toolbar and separate large notebook heading are omitted. Download, delete, chat, fork, and edit controls live in the notebook panel header. A standalone mobile navigation button opens the sidebar on narrow screens.
+A subtle GitHub icon beside the sidebar logo opens the project repository in a new tab. The breadcrumb toolbar and separate large notebook heading are omitted. Download, delete, chat, fork, and edit controls live in the notebook panel header. On mobile, an outlined Menu button precedes the title inside the notebook panel header, avoiding a separate navigation row. The welcome screen retains its own Menu button.
 
 Published and editor iframes scroll internally rather than imposing minimum heights on the page. The sidebar notebook list scrolls independently with overscroll disabled; sidebar branding and account controls stay fixed. Setup output has a bounded scroll area. Compact spacing preserves notebook space on short landscape screens.
 

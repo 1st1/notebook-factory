@@ -608,12 +608,8 @@ footer > span:last-child {
     margin: 0;
     width: 100%;
   }
-  .mobile-toggle {
-    display: grid;
-    flex-shrink: 0;
-    align-self: flex-start;
-    margin: 12px 20px 0;
-  }
+  .mobile-toggle { display: inline-flex; flex-shrink: 0; }
+  .welcome-menu { align-self: flex-start; margin: 0 12px 8px; }
   .scrim {
     display: block;
     position: fixed;
@@ -831,6 +827,8 @@ main { padding-top: 16px; }
 .notebook-header-actions .download, .notebook-header-actions .delete-notebook { width: 28px; padding: 0; }
 @media (max-width: 650px) {
   .notebook-toolbar { height: auto; min-height: 40px; flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
-  .notebook-panel-title { flex: 1 1 100%; }
-  main { padding-top: 48px; }
+  .notebook-panel-title { flex: 1; }
+  .notebook-menu { height: 28px; padding: 0 8px; font-size: 11px; gap: 5px; }
+  .notebook-header-actions { flex-basis: 100%; justify-content: flex-end; }
+  main { padding-top: 8px; }
 }
