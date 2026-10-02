@@ -16,6 +16,7 @@ export function Chat({
   editor,
   getFrame,
   selected,
+  editorStarting,
   open,
   onClose,
   onHistoryLoaded,
@@ -30,6 +31,7 @@ export function Chat({
   onEnterEditing: () => Promise<void>;
   getFrame: () => HTMLIFrameElement | null;
   selected: boolean;
+  editorStarting: boolean;
   open: boolean;
   disabled: boolean;
   onClose: () => void;
@@ -39,9 +41,18 @@ export function Chat({
 }) {
   const currentEditor = useRef(editor);
   currentEditor.current = editor;
+  const starting = useRef(editorStarting);
+  starting.current = editorStarting;
   const [consent, setConsent] = useState<{ reason: string; resolve: (yes: boolean) => void } | null>(null);
   const consentRef = useRef<typeof consent>(null);
   consentRef.current = consent;
+  useEffect(() => {
+    // A manual startup or recovery may finish while a viewing-mode tool waits.
+    if (consent && editor) {
+      consent.resolve(true);
+      setConsent(null);
+    }
+  }, [consent, editor]);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(0);
   const active = useRef(true);
@@ -90,7 +101,7 @@ export function Chat({
               "Tool limit reached. Send another message to continue.",
             );
           if (toolCall.toolName === "request_editing") {
-            let accepted = !!currentEditor.current;
+            let accepted = !!currentEditor.current || starting.current;
             if (!accepted) accepted = await new Promise<boolean>(resolve => setConsent({ reason: String((toolCall.input as { reason?: string })?.reason || "Enter editing mode to make these changes?"), resolve }));
             setConsent(null);
             if (!active.current) return;

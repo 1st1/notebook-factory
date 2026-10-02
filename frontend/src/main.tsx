@@ -801,7 +801,7 @@ function App() {
               />}
             </div>
             {auth.can_edit && chatIds.map(id => <Suspense key={id} fallback={null}><Chat
-              model={auth.chat_model} notebookId={id} selected={selected === id}
+              model={auth.chat_model} notebookId={id} selected={selected === id} editorStarting={startingIds.has(id)}
               editor={editors[id]?.connected ? editors[id] : null}
               getFrame={() => { const current = editorsRef.current[id]; return current ? frames.current.get(current.token) ?? null : null; }}
               disabled={selected === id && !!busy} open={selected === id && chatOpen}
