@@ -4,7 +4,6 @@ import {
   ArrowUpRight,
   BookOpen,
   Check,
-  ChevronRight,
   Download,
   Github,
   LoaderCircle,
@@ -427,25 +426,13 @@ function App() {
         </div>
       </aside>
       <main>
-        <header className="topbar">
-          <div className="breadcrumbs">
-            <button
-              className="icon-button mobile-toggle"
-              aria-label="Open navigation"
-              onClick={() => setMobile(true)}
-            >
-              <Menu size={19} />
-            </button>
-            <span>Workspace</span>
-            <ChevronRight size={14} />
-            <strong>{notebook?.title || "Notebooks"}</strong>
-          </div>
-          {editor && (
-            <span className="view-label">
-              <span className="green-dot" /> Live editor
-            </span>
-          )}
-        </header>
+        <button
+          className="icon-button mobile-toggle"
+          aria-label="Open navigation"
+          onClick={() => setMobile(true)}
+        >
+          <Menu size={19} />
+        </button>
         {error && (
           <div className="error" role="alert">
             <span>{error}</span>

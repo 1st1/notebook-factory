@@ -92,14 +92,18 @@ async def stream(messages, message_id=None):
                     event["messageId"] = message_id
                     chunk = "data: " + json.dumps(event) + "\n\n"
                 yield chunk
-    except Exception:
+    except Exception as error:
         log.exception("Notebook chat failed")
+        message = "AI request failed. Retry, or check Vercel AI Gateway access and credits."
+        if "Free tier users do not have access to this model" in str(error):
+            message = "This model requires paid Vercel AI Gateway credits. Add credits in your team's AI Gateway dashboard, then retry."
+
         yield (
             "data: "
             + json.dumps(
                 {
                     "type": "error",
-                    "errorText": "AI request failed. Retry, or check Vercel AI Gateway access and credits.",
+                    "errorText": message,
                 }
             )
             + "\n\n"

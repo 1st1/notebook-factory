@@ -28,9 +28,22 @@
           };
         }
 
+        function notebookWidget(app) {
+          if (!app || !app.shell) return null;
+          var current = app.shell.currentWidget;
+          function matches(widget) {
+            return widget && !widget.isDisposed && widget.context && widget.context.path === "notebook.ipynb";
+          }
+          if (matches(current)) return current;
+          if (typeof app.shell.widgets === "function") {
+            return Array.from(app.shell.widgets("main")).find(matches) || null;
+          }
+          return null;
+        }
+
         function waitForNotebookContext() {
           var app = window.jupyterapp;
-          var widget = app && app.shell && app.shell.currentWidget;
+          var widget = notebookWidget(app);
           if (!widget || !widget.context) {
             window.setTimeout(waitForNotebookContext, 50);
             return;
@@ -164,7 +177,7 @@
         }
         async function notebookTool(data) {
           var app = window.jupyterapp;
-          var widget = app && app.shell.currentWidget;
+          var widget = notebookWidget(app);
           if (!widget || !widget.content || !widget.context || widget.context.path !== "notebook.ipynb")
             throw new Error("Select notebook.ipynb and wait for Jupyter to load.");
           await widget.context.ready;
@@ -196,6 +209,7 @@
           }
           if (data.tool === "run_cell") {
             if (cell.cell_type !== "code") throw new Error("Only code cells can run.");
+            app.shell.activateById(widget.id);
             widget.content.deselectAll();
             widget.content.activeCellIndex = index;
             await app.commands.execute("notebook:run-cell", { toolbar: true });
@@ -229,9 +243,9 @@
 
           try {
             var app = window.jupyterapp;
-            var widget = app.shell.currentWidget;
+            var widget = notebookWidget(app);
             if (!widget || !widget.context || widget.context.path !== "notebook.ipynb") {
-              throw new Error("Select notebook.ipynb before saving.");
+              throw new Error("The notebook is not open yet. Wait for Jupyter to load and retry.");
             }
             await widget.context.ready;
             serializeSaves(widget.context);

@@ -235,6 +235,13 @@ export function Chat({
           placeholder="Ask about this notebook…"
           value={input}
           onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              if (!event.repeat) event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          aria-keyshortcuts="Meta+Enter Control+Enter"
           disabled={busy || disabled}
           rows={3}
         />

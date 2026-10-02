@@ -21,7 +21,7 @@ function bridge(context, content) {
     ResizeObserver: class { observe() {} },
     __PARENT_ORIGIN__: 'https://app.test',
   });
-  return { handlers, parent };
+  return { handlers, parent, shell };
 }
 
 // @lat: [[editing#Save serialization]]
@@ -87,4 +87,21 @@ test('chat reads unsaved cells and refuses stale replacements or untrusted messa
   assert.equal(await call('read_notebook', {}, { source: {} }), undefined);
   await call('replace_cell', { cell_id: 'cell-1', expected_source: source, source: 'print(43)' });
   assert.equal(source, 'print(43)');
+});
+
+// @lat: [[chat#Unfocused notebook saves]]
+test('save finds the open notebook when Jupyter has no focused widget', async () => {
+  let saved = 0;
+  const context = { path: 'notebook.ipynb', ready: Promise.resolve(), async save() { saved++; } };
+  const { handlers, parent, shell } = bridge(context);
+  const widget = shell.currentWidget;
+  shell.currentWidget = null;
+  shell.widgets = function* () { yield widget; };
+  let response;
+  parent.postMessage = value => { response = value; };
+  await handlers.message({ source: parent, origin: 'https://app.test', data: {
+    type: 'vercel-notebook-save', token: 'token', id: 'save-unfocused',
+  } });
+  assert.equal(saved, 1);
+  assert.equal(response.type, 'vercel-notebook-saved');
 });

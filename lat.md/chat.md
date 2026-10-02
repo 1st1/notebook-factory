@@ -2,13 +2,13 @@
 
 The editor's Chat button opens a right sidebar where the assistant can read, edit, and execute the active notebook using Python AI SDK and AI SDK UI.
 
-[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and an active editor token on every model turn. History is ephemeral and disappears when the editor closes.
+[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and an active editor token on every model turn. Cmd+Enter or Ctrl+Enter submits the chat composer; plain Enter inserts a newline. History is ephemeral and disappears when the editor closes.
 
 ## Agent and streaming
 
 [[backend/chat.py]] streams through Vercel AI Gateway with four browser-executed notebook tools. The model never receives Sandbox credentials or a general server-side execution tool.
 
-The default model is Claude Sonnet 4.6, configurable with AI_MODEL. Deployment uses Vercel OIDC; local development can load VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY. Gateway access and credits are required. Notebook sources and text outputs are sent to the model when it reads the document.
+The default model is Claude Sonnet 4.6, configurable with AI_MODEL. Deployment uses Vercel OIDC; local development can load VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY. Gateway access and credits are required. A free-tier model rejection displays an explicit instruction to add paid Gateway credits. Notebook sources and text outputs are sent to the model when it reads the document.
 
 The Python 0.8 UI adapter dispatches completed client tool inputs through an empty ToolCallResult event. Continuations preserve the existing assistant UI message ID to prevent duplicated tool history. Empty argument strings are normalized to JSON objects. Requests have a 1 MB history limit and 160-message limit; the browser bounds automatic work to 24 tool calls per user message.
 
@@ -35,3 +35,9 @@ API regressions verify owner and origin requirements, rejection of stale editor 
 Live Sandbox checks verified reading, insertion, source replacement, kernel outputs (42 and 49), dependency installation, and an inline matplotlib chart. Five desktop/mobile viewport sizes fit without outer scrolling.
 
 A simulated Python model stream verifies that the UI adapter emits executable client tool inputs without a fabricated tool result and terminates the SSE stream correctly.
+
+## Unfocused notebook saves
+
+The bridge resolves notebook.ipynb among Jupyter's open main-area widgets when the focused widget is absent or different. Saving and chat tools therefore do not require focus inside the notebook.
+
+Execution activates the resolved notebook before invoking Jupyter's cell command. A regression test removes the focused widget and verifies that saving still reaches the open document.

@@ -266,38 +266,6 @@ main {
   width: calc(100% - 264px);
   min-width: 0;
 }
-.topbar {
-  flex-shrink: 0;
-  height: 73px;
-  border-bottom: 1px solid #eaece5;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 46px;
-}
-.breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  font-size: 11px;
-  color: #9a9d94;
-  min-width: 0;
-}
-.breadcrumbs strong {
-  font-weight: 450;
-  color: #666e5f;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.view-label {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  font-size: 10px;
-  color: #8d9386;
-  white-space: nowrap;
-}
 .notebook-heading {
   flex-shrink: 0;
   padding: 43px 46px 31px;
@@ -564,8 +532,7 @@ footer > span:last-child {
   display: none;
 }
 @media (min-width: 1500px) {
-  .notebook-heading,
-  .topbar {
+  .notebook-heading {
     padding-left: 70px;
     padding-right: 70px;
   }
@@ -586,9 +553,6 @@ footer > span:last-child {
   main {
     margin-left: 225px;
     width: calc(100% - 225px);
-  }
-  .topbar {
-    padding: 0 26px;
   }
   .notebook-heading {
     padding: 30px 26px;
@@ -631,6 +595,9 @@ footer > span:last-child {
   }
   .mobile-toggle {
     display: grid;
+    flex-shrink: 0;
+    align-self: flex-start;
+    margin: 12px 20px 0;
   }
   .scrim {
     display: block;
@@ -638,13 +605,6 @@ footer > span:last-child {
     inset: 0;
     background: #18201155;
     z-index: 9;
-  }
-  .topbar {
-    padding: 0 18px;
-    height: 60px;
-  }
-  .breadcrumbs {
-    gap: 8px;
   }
   .notebook-heading {
     padding: 27px 20px;
@@ -656,9 +616,6 @@ footer > span:last-child {
   .metadata {
     font-size: 9px;
     gap: 7px;
-  }
-  .view-label {
-    font-size: 9px;
   }
   .empty {
     padding: 25px;
@@ -729,7 +686,6 @@ footer > span:last-child {
 main > .progress { flex-shrink: 0; }
 .error { flex-shrink: 0; max-height: 18dvh; overflow: auto; overscroll-behavior: none; }
 @media (max-height: 600px) {
-  .topbar { height: 44px; }
   .notebook-heading { padding-top: 10px; padding-bottom: 12px; }
   .title-row { flex-direction: row; align-items: center; margin: 0 0 8px; gap: 12px; }
   h1 { font-size: 24px; }
