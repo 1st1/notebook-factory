@@ -8,7 +8,7 @@ The configured production application is [notebooks.playground-vercel.tools](htt
 
 | Setting | Project value |
 | --- | --- |
-| Git repository | `https://github.com/1st1/notebook-factory` |
+| Git repository | `https://github.com/vercel-labs/notebook-factory` |
 | Local Git remote | `up` |
 | Vercel project | `notebook-factory` |
 | Project ID | `prj_46j0HKfLl1LIgBGdDMaXXEpTUpFh` |

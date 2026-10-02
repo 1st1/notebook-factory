@@ -532,7 +532,7 @@ function App() {
           </a>
           <a
             className="repository-link"
-            href="https://github.com/1st1/notebook-factory"
+            href="https://github.com/vercel-labs/notebook-factory"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="View Notebook Factory on GitHub"
