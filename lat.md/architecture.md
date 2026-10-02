@@ -2,6 +2,77 @@
 
 A public Python notebook library with GitHub-owner-only editing. React and FastAPI run as Vercel Services; temporary JupyterLab environments run in Vercel Sandbox.
 
+## Overall architecture on Vercel
+
+Vercel hosts the web and API services, isolates Python execution in Sandbox, serves published artifacts through Blob, and routes model requests through AI Gateway. Neon Postgres holds durable application state.
+
+The application and publication path uses two services in one Vercel deployment. API calls share the app origin; published HTML is fetched directly from Blob. GitHub OAuth authenticates the owner through the API.
+
+```mermaid
+flowchart TB
+    browser["Browser"]
+    subgraph app["Vercel Services"]
+        web["Vite + React"]
+        api["FastAPI / Functions"]
+    end
+    browser -->|"app assets"| web
+    browser <-->|"/api requests"| api
+    api <-->|"durable state"| neon[("Neon Postgres")]
+    api -->|"publish HTML"| blob["Vercel Blob"]
+    api <-->|"chat stream"| gateway["AI Gateway"]
+    gateway <--> model["Model provider"]
+    blob -->|"public HTML"| viewer["Browser viewer"]
+```
+
+Browser and Browser viewer represent the same client, drawn separately to keep the publication path compact. Neon is connected through Vercel Marketplace. The viewer isolates HTML in a sandboxed iframe; reading a publication never starts a Python kernel.
+
+Notebook execution has a separate lifecycle. The API manages the Sandbox, while the embedded editor connects directly to JupyterLab for HTTP and kernel WebSockets.
+
+```mermaid
+flowchart TB
+    api["FastAPI / Functions"]
+    snapshot["Prepared snapshot"]
+    sandbox["Vercel Sandbox"]
+    jupyter["JupyterLab + Python"]
+    browser["Browser editor iframe"]
+    api -->|"create, keep alive, stop"| sandbox
+    snapshot -->|"restore dependencies"| sandbox
+    sandbox -->|"runs"| jupyter
+    browser <-->|"direct HTTP + WebSockets"| jupyter
+    browser -->|"export draft to API"| save["FastAPI: save / publish"]
+    save -->|"persist document"| neon[("Neon Postgres")]
+```
+
+The two FastAPI nodes represent the same backend service. The snapshot contains prepared dependencies, including fonts from Blob, but no private notebook data. The API supplies the current draft and editor assets when creating a session. AI cell tools use the browser bridge to operate on this live editor.
+
+| Platform component | Role in this app | Implementation and details |
+| --- | --- | --- |
+| Vercel Services and Functions | Deploy frontend and backend together under one origin; FastAPI handles authentication, metadata, persistence, publication, and streamed setup/chat responses. | [vercel.json](../vercel.json), [[backend/main.py]], [[architecture#Services]] |
+| Vercel Sandbox | Run notebook Python and JupyterLab in temporary environments restored from a prepared dependency snapshot. The backend injects the current private draft and fresh editor assets. | [[backend/editor.py#start]], [[editing#Prepared dependency environment]] |
+| Vercel Blob | Serve immutable published HTML through the CDN and store the prepared font bundle used to build dependency snapshots. | [[backend/publication.py#upload]], [[deployment#Published HTML in Blob]], [[editing#Plot font fallback]] |
+| Vercel AI Gateway and AI SDK | Route configured model inference and stream assistant responses; browser tools apply cell edits and execution through the authenticated Jupyter bridge. | [[backend/chat.py#stream]], [[frontend/src/Chat.tsx#Chat]], [[chat#Live document tools]] |
+| Vercel deployment identity | Supply OIDC for backend Sandbox and Gateway access. Blob uses its backend-only read/write token; database and OAuth credentials remain backend configuration. | [[backend/main.py#headers]], [[deployment#Environment configuration]] |
+| Neon via Vercel Marketplace | Persist notebook drafts, published source and fallback HTML, chat history, editor session records, and operation leases across requests and deployments. | [[backend/db.py]], [[architecture#Persistence]], [[chat#Persistent conversations]] |
+
+### Main data flows
+
+Public reading, private editing, and AI assistance share the API and database, while notebook execution and artifact delivery use separate Vercel services.
+
+1. **Read:** the browser loads the React app and public notebook metadata, then fetches published HTML directly from Blob into a sandboxed iframe. The API render endpoint supplies a fallback; public viewing does not start a Sandbox or execute cells.
+2. **Edit:** GitHub OAuth establishes the owner session. The API acquires a database lease and opens or reuses a Sandbox. The editor iframe connects directly to JupyterLab, including kernel WebSockets. The browser exports its live document through the bridge and sends autosaved private drafts to the API for Postgres persistence.
+3. **Publish:** Save & exit exports the document, renders HTML in the backend, uploads it to Blob, and commits the published source, fallback HTML, artifact URL, and revision together in Postgres. Publication does not deploy the app. Sandbox shutdown follows persistence.
+4. **Assist:** the browser sends an authenticated chat turn to FastAPI, which streams inference through AI Gateway. Notebook tool calls return to the browser and act on the live Jupyter document; rename calls the authenticated API. Private chat history is saved separately in Postgres.
+
+### Deployment and lifetime boundaries
+
+Application deployments, prepared dependencies, live execution sessions, and durable notebook content have independent lifetimes.
+
+[scripts/deploy.sh](../scripts/deploy.sh) prepares immutable font assets and validates or builds the dependency-only Sandbox snapshot before deploying both app services. Committed manifests pin these prepared resources; [[deployment#Preparing the Sandbox snapshot]] describes reuse and rollback requirements.
+
+[[backend/editor.py#generation]] ties editor reuse to the creating deployment so a replacement receives current bridge assets. The snapshot contains dependencies without private notebooks or editor tokens. Live Sandboxes are disposable: notebook documents and saved outputs survive in Postgres, while kernel memory, extra installed packages, and side files do not. See [[editing#Deployment generations]] and [[editing#Closing and recovery]].
+
+Database leases coordinate editor mutations across Function instances. Shutdown and deletion cleanup use response background tasks rather than a durable queue. Public Blob artifacts contain only published content; drafts, chat, and editor capabilities stay behind owner authorization. See [[architecture#Authentication]] and [[architecture#Notebook deletion]].
+
 ## Product scope
 
 [[frontend/src/main.tsx]] provides notebook navigation, title search, creation, public rendering, downloads, and an embedded editor for GitHub user 1st1.
@@ -33,6 +104,7 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 | `published_html` | Pre-rendered HTML for the same published revision; nullable for legacy rows |
 | `created_at`, `updated_at`, `revision` | Creation/publication metadata; draft saves do not change publication time |
 | `editor` | Nullable JSON containing Sandbox name, editor URL, and capability token |
+| `chat_history`, `chat_revision` | Private conversation and optimistic concurrency counter |
 | `claim`, `claim_until` | Atomic operation lease shared across function instances |
 
 [[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. Initialization also adds the nullable published HTML column to existing tables. This targeted upgrade is not a general migration framework. Postgres retains up to two idle connections with three overflow connections, pre-ping checks, and five-minute recycling to avoid repeating connection setup on every request. SQLite tests use NullPool. Application shutdown disposes the pool.
