@@ -93,6 +93,10 @@ svg {
   border-radius: 5px;
   transition: color 150ms, background-color 150ms;
 }
+.repository-link > svg {
+  /* The GitHub outline carries most of its visual weight above its center. */
+  transform: translateY(2px);
+}
 .repository-link:hover,
 .repository-link:focus-visible {
   color: #53604e;
