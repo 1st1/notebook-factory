@@ -51,7 +51,7 @@ def new_notebook(title: str):
         nbformat.v4.new_notebook(
             cells=[
                 nbformat.v4.new_markdown_cell(
-                    "# " + title + "\n\nStart with a question. Make something worth sharing."
+                    "# " + title + "\n\nStart with a question. Make something worth sharing. Or ask the agent to do it for you."
                 ),
                 nbformat.v4.new_code_cell('print("Hello, notebook.")'),
             ],

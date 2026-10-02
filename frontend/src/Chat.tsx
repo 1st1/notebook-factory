@@ -269,7 +269,7 @@ export function Chat({
         <span><span className="green-dot" />NOTEBOOK CHAT</span>
         <span className="chat-header-actions">
         {!readOnly && <button
-          className="icon-button"
+          className="icon-button new-chat-button"
           aria-label="New chat"
           title="New chat"
           disabled={busy || history.blocking || !history.loaded || history.reloadRequired}
@@ -281,7 +281,7 @@ export function Chat({
             count.current = 0;
           }}
         >
-          <RotateCcw size={16} />
+          <RotateCcw size={14} /><span>New chat</span>
         </button>}
         <button
           className="icon-button"

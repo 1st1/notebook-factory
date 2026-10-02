@@ -715,7 +715,9 @@ main > .progress { flex-shrink: 0; }
 .chat-panel { display: flex; flex-direction: column; width: 360px; max-width: 100%; min-height: 0; flex-shrink: 0; border: 1px solid #dde1d5; border-radius: 10px; background: #fafbf7; overflow: hidden; }
 .chat-panel[hidden] { display: none; }
 .chat-header-actions { margin-left: auto; gap: 8px; }
-.chat-header-actions .icon-button { width: 22px; height: 22px; padding: 0; }
+.chat-header-actions .icon-button { width: 28px; height: 28px; padding: 0; border: 1px solid #dde1d5; border-radius: 5px; background: transparent; }
+.chat-header-actions .new-chat-button { display: flex; align-items: center; gap: 5px; width: auto; padding: 0 8px; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.chat-header-actions .icon-button:hover:not(:disabled) { background: #f0f3eb; border-color: #bdc6b4; }
 .chat-messages { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: none; padding: 16px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .chat-message { margin-bottom: 20px; }
 .chat-message > small { color: #7b8573; font-weight: 600; }

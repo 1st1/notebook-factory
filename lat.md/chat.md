@@ -62,7 +62,7 @@ Tool cards distinguish argument generation from execution and errors. Code previ
 
 ## Chat Markdown and model label
 
-User messages display the notebook owner’s username, including in public read-only history.
+User messages display the notebook owner’s username, including in public read-only history. Chat header buttons have subtle outlines; the reset action is labeled New chat.
 
 Chat renders GitHub-flavored Markdown tables in horizontally scrollable containers. The server reports the configured model ID, which is displayed below the chat toolbar.
 
