@@ -70,6 +70,8 @@ Chat renders GitHub-flavored Markdown tables in horizontally scrollable containe
 
 [[frontend/src/useNotebookHistory.ts#useNotebookHistory]] loads the notebook conversation and saves it after each completed or stopped turn. History survives publishing, discarding edits, reconnecting, and reopening the editor.
 
+History loading disables only chat controls, not sidebar navigation. Active assistant work and pending history writes still block navigation to preserve the conversation.
+
 [[backend/main.py#load_chat_history]] and [[backend/main.py#save_chat_history]] require the owner and same-origin requests. The UI saves history independently of the editor token so a viewing-to-editing handoff preserves the same conversation; legacy token-bearing calls still validate that token. Revision checks reject concurrent stale writes, and private history is excluded from public notebook metadata and exports. Storage uses the existing one-megabyte and 160-message limits. New chat clears the saved conversation; it does not change notebook content.
 
 [[backend/chat.py#history_messages]] marks unfinished tools as interrupted when storing them. Rehydration does not submit model requests or replay tools; the next user message begins a fresh turn. The prompt treats previous results as historical because notebook edits may have been discarded and kernel memory may have changed.

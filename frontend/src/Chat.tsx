@@ -221,8 +221,8 @@ export function Chat({
   const busy = status === "submitted" || status === "streaming" || pending > 0;
   const history = useNotebookHistory(notebookId, null, messages, setMessages, busy);
   useEffect(() => {
-    onBusy(busy || history.blocking);
-  }, [busy, history.blocking, onBusy]);
+    onBusy(busy || history.navigationBlocking);
+  }, [busy, history.navigationBlocking, onBusy]);
   useEffect(() => { compatible.current = false; }, [editor?.token]);
   useEffect(() => {
     active.current = true;
