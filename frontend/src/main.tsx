@@ -134,12 +134,24 @@ function cachedNotebooks(): Notebook[] | null {
   return null;
 }
 
+function ChatLoading({ open, onClose }: { open: boolean; onClose: () => void }) {
+  return <aside className="chat-panel" hidden={!open} aria-label="Notebook chat" aria-busy="true">
+    <header className="surface-toolbar">
+      <span><span className="green-dot" />NOTEBOOK CHAT</span>
+      <span className="chat-header-actions"><button className="icon-button" aria-label="Close chat" onClick={onClose}><X size={18} /></button></span>
+    </header>
+    <div className="chat-messages"><p className="chat-hint chat-status" role="status"><LoaderCircle size={14} className="spin" aria-hidden="true" />Loading conversation…</p></div>
+    <form><textarea aria-label="Message" placeholder="Loading conversation…" disabled rows={3} /></form>
+  </aside>;
+}
+
 function App() {
   const [auth, setAuth] = useState<Auth>({
     user: null,
     can_edit: false,
     configured: false,
   });
+  const [authLoaded, setAuthLoaded] = useState(false);
   const [cached] = useState(cachedNotebooks);
   const [notebooks, setNotebooks] = useState<Notebook[]>(cached || []);
   const [selected, setSelected] = useState<string | null>(
@@ -231,7 +243,7 @@ function App() {
           sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: list }));
         } catch { /* Rendering must not depend on browser storage. */ }
       }),
-      api<Auth>("/auth/me").then(setAuth),
+      api<Auth>("/auth/me").then(setAuth).finally(() => setAuthLoaded(true)),
     ]);
   }, []);
   useEffect(() => {
@@ -763,7 +775,8 @@ function App() {
                 notebook={notebook} version={renderVersion}
               />}
             </div>
-            {auth.can_edit && chatIds.map(id => <Suspense key={id} fallback={null}><Chat
+            {notebook && !authLoaded && <ChatLoading open={chatOpen} onClose={() => setChatOpen(false)} />}
+            {auth.can_edit && chatIds.map(id => <Suspense key={id} fallback={<ChatLoading open={selected === id && chatOpen} onClose={() => setChatPanel({ id, open: false })} />}><Chat
               model={auth.chat_model} notebookId={id} editorStarting={startingIds.has(id)}
               editor={editors[id]?.connected ? editors[id] : null}
               getFrame={() => { const current = editorsRef.current[id]; return current ? frames.current.get(current.token) ?? null : null; }}

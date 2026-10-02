@@ -34,7 +34,18 @@ const server=http.createServer(async(req,res)=>{
 });
 const tick=()=>new Promise(r=>setTimeout(r,100));
 (async()=>{await new Promise(r=>server.listen(5187,'127.0.0.1',r));const browser=await chromium.launch();try{
- const page=await browser.newPage();await page.clock.install();await page.goto('http://127.0.0.1:5187/?notebook=one');
+ const page=await browser.newPage();await page.clock.install();
+ let authRoute,chatRoute;
+ await page.route('**/api/auth/me',route=>{authRoute=route});
+ await page.route('**/assets/Chat-*.js',route=>{chatRoute=route});
+ await page.goto('http://127.0.0.1:5187/?notebook=one',{waitUntil:'domcontentloaded'});
+ await page.getByRole('complementary',{name:'Notebook chat'}).waitFor();
+ await page.getByText('Loading conversation…',{exact:true}).waitFor();
+ for(let i=0;i<30&&!authRoute;i++)await tick();assert(authRoute);await authRoute.continue();await page.unroute('**/api/auth/me');
+ for(let i=0;i<30&&!chatRoute;i++)await tick();assert(chatRoute);
+ assert(await page.getByRole('complementary',{name:'Notebook chat'}).isVisible(),'panel remains visible before chat bundle loads');
+ assert(await page.getByRole('textbox',{name:'Message'}).isDisabled());
+ await chatRoute.continue();await page.unroute('**/assets/Chat-*.js');
  await page.getByRole('heading',{name:'Notebook one',exact:true}).waitFor();
  for(let i=0;i<30&&!historyWaiters.length;i++)await tick();assert(historyWaiters.length,'history request is deliberately stalled');
  for(const button of await page.getByRole('navigation',{name:'Notebooks'}).getByRole('button').all())assert.equal(await button.isEnabled(),true,'history loading must not disable sidebar');

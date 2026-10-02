@@ -70,7 +70,7 @@ Chat renders GitHub-flavored Markdown tables in horizontally scrollable containe
 
 [[frontend/src/useNotebookHistory.ts#useNotebookHistory]] loads the notebook conversation and saves it after each completed or stopped turn. History survives publishing, discarding edits, reconnecting, and reopening the editor.
 
-Selecting a notebook opens chat by default, including empty conversations. A spinner appears while history loads. Manual dismissal is respected until the next notebook visit. Only the latest 50 saved messages are loaded; saves preserve the unseen prefix under the same revision check. New chat explicitly clears the entire conversation.
+Selecting a notebook opens chat by default, including empty conversations. An immediate panel shell reserves the chat width while authentication and the lazy chat bundle load, then a spinner remains while history loads. Public readers lose the placeholder once authorization resolves; no private history loads before authorization. Manual dismissal is respected until the next notebook visit. Only the latest 50 saved messages are loaded; saves preserve the unseen prefix under the same revision check. New chat explicitly clears the entire conversation.
 
 History loading disables only chat controls, not sidebar navigation. Mounted conversations continue streaming, executing tools, and saving history in the background. Three animated green sidebar dots indicate active assistant work; awaiting editing consent is not active work.
 
