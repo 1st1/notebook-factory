@@ -4,19 +4,19 @@ The app deploys from the repository root as two Vercel Services, with Neon Postg
 
 ## Production project
 
-The configured production application is [notebook-factory-green.vercel.app](https://notebook-factory-green.vercel.app), under the Vercel team `yury-selivanovs-projects`.
+The configured production application is [notebooks.playground-vercel.tools](https://notebooks.playground-vercel.tools), under the Vercel team `vercel-internal-playground` (Vercel Internal Playground).
 
 | Setting | Project value |
 | --- | --- |
 | Git repository | `https://github.com/1st1/notebook-factory` |
 | Local Git remote | `up` |
 | Vercel project | `notebook-factory` |
-| Project ID | `prj_6Q4NWdJ0w3VHaXshi9MoWKwhdPhP` |
-| Team ID | `team_7scPglQEOz4JjqD4f08fLr7z` |
+| Project ID | `prj_46j0HKfLl1LIgBGdDMaXXEpTUpFh` |
+| Team ID | `team_TtmJZYmD3tcLBLqWOhoVawd1` |
 | Database | Connected Neon Marketplace integration |
 | User enrollment | Any Vercel account, up to 300 admitted users |
 
-These are the project details verified during setup on October 1, 2026. Local linkage lives in the ignored `.vercel/project.json`. Production has been deployed directly from the working tree with the CLI; a successful deployment does not imply those changes have been committed or pushed.
+These are the project details verified from the new project linkage on October 2, 2026. Local linkage lives in the ignored `.vercel/project.json`. Production has been deployed directly from the working tree with the CLI; a successful deployment does not imply those changes have been committed or pushed.
 
 The production alias is public. Unique deployment URLs have Vercel deployment protection, so use the canonical alias for public checks and OAuth. See [[architecture#Services]] for routing and function configuration.
 
@@ -28,7 +28,7 @@ The production alias is public. Unique deployment URLs have Vercel deployment pr
 | --- | --- |
 | `AI_MODEL` | Optional chat model; defaults to gateway:openai/gpt-6-luna |
 | `AI_GATEWAY_API_KEY` | Optional AI Gateway key; deployments use Vercel OIDC by default |
-| `APP_URL` | Canonical app origin; production uses `https://notebook-factory-green.vercel.app` |
+| `APP_URL` | Canonical app origin; production uses `https://notebooks.playground-vercel.tools` |
 | `BLOB_READ_WRITE_TOKEN` | Backend upload credential for the public rendered-notebook Blob store |
 | `SESSION_SECRET` | Random signing secret, at least 32 characters in deployment |
 | `DATABASE_URL` | Neon/Postgres connection URL with TLS options |
@@ -141,7 +141,7 @@ Update [direct dependencies](../backend/assets/sandbox-requirements.in), then re
 
 ## Vercel sign-in setup
 
-This implementation requires a fresh database and a Sign in with Vercel application. The existing project linkage above has not been moved to Vercel Internal Playground.
+This implementation requires a fresh database and a Sign in with Vercel application. The repository is linked to the new project in Vercel Internal Playground.
 
 In the target team's Settings → Apps, create an app with Sign-In Access set to **Anyone with a Vercel account**. Enable openid/profile scopes, select client_secret_post authentication, and register the exact APP_URL plus `/api/auth/callback`. Store the client ID and secret in VERCEL_APP_CLIENT_ID and VERCEL_APP_CLIENT_SECRET. Local development can register `http://localhost:5173/api/auth/callback` as well. See [Vercel app configuration](https://vercel.com/docs/sign-in-with-vercel/manage-from-dashboard).
 
