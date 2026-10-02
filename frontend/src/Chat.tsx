@@ -30,6 +30,9 @@ export function Chat({
   const active = useRef(true);
   const count = useRef(0);
   const halted = useRef(false);
+  const compatible = useRef(false);
+  const failures = useRef(0);
+  const [toolError, setToolError] = useState("");
   const tail = useRef(Promise.resolve());
   const bottom = useRef<HTMLDivElement>(null);
   const transport = useMemo(
@@ -61,7 +64,7 @@ export function Chat({
         try {
           if (!active.current) return;
           if (disabled) throw new Error("The editor is closing.");
-          if (halted.current) throw new Error("Stopped by user.");
+          if (halted.current) throw new Error("Tool execution is paused.");
           if (++count.current > 24)
             throw new Error(
               "Tool limit reached. Send another message to continue.",
@@ -69,44 +72,66 @@ export function Chat({
           const target = frame.current?.contentWindow;
           if (!target) throw new Error("Editor is unavailable.");
           const origin = new URL(editor.url).origin;
-          const id = crypto.randomUUID();
-          const output = await new Promise<unknown>((resolve, reject) => {
-            const timer = window.setTimeout(() => {
-              cleanup();
-              reject(
-                new Error(
-                  "Jupyter timed out. A running cell may still be executing; inspect it before retrying.",
-                ),
+          const request = (type: string, timeout: number) => {
+            const id = crypto.randomUUID();
+            return new Promise<unknown>((resolve, reject) => {
+              const timer = window.setTimeout(() => {
+                cleanup();
+                reject(
+                  new Error(
+                    type === "vercel-notebook-capabilities"
+                      ? "This editor is running an older or unresponsive bridge. Reconnect the editor before continuing chat."
+                      : "Jupyter timed out. A running cell may still be executing; inspect it before retrying.",
+                  ),
+                );
+              }, timeout);
+              function cleanup() {
+                clearTimeout(timer);
+                window.removeEventListener("message", receive);
+              }
+              function receive(event: MessageEvent) {
+                if (
+                  event.source !== target ||
+                  event.origin !== origin ||
+                  event.data?.id !== id ||
+                  event.data.type !== "vercel-notebook-tool-result"
+                )
+                  return;
+                cleanup();
+                if (event.data.error) reject(new Error(event.data.error));
+                else resolve(event.data.result);
+              }
+              window.addEventListener("message", receive);
+              target.postMessage(
+                {
+                  type,
+                  token: editor.token,
+                  id,
+                  tool: toolCall.toolName,
+                  args: toolCall.input,
+                },
+                origin,
               );
-            }, 120000);
-            function cleanup() {
-              clearTimeout(timer);
-              window.removeEventListener("message", receive);
+            });
+          };
+          if (!compatible.current) {
+            try {
+              const capabilities = await request("vercel-notebook-capabilities", 5000) as { protocol?: number };
+              if (capabilities.protocol !== 2) throw new Error("Reconnect the editor to update its notebook tools.");
+              compatible.current = true;
+            } catch (error) {
+              halted.current = true;
+              throw error;
             }
-            function receive(event: MessageEvent) {
-              if (
-                event.source !== target ||
-                event.origin !== origin ||
-                event.data?.id !== id ||
-                event.data.type !== "vercel-notebook-tool-result"
-              )
-                return;
-              cleanup();
-              if (event.data.error) reject(new Error(event.data.error));
-              else resolve(event.data.result);
+          }
+          const output = await request("vercel-notebook-tool", 120000);
+          if (output && typeof output === "object" && "error" in output) {
+            failures.current++;
+            if (failures.current >= 3) {
+              halted.current = true;
+              setToolError("Paused after repeated tool failures. Review the errors before continuing.");
             }
-            window.addEventListener("message", receive);
-            target.postMessage(
-              {
-                type: "vercel-notebook-tool",
-                token: editor.token,
-                id,
-                tool: toolCall.toolName,
-                args: toolCall.input,
-              },
-              origin,
-            );
-          });
+          } else failures.current = 0;
           if (active.current)
             await addToolOutput({
               tool: toolCall.toolName,
@@ -114,6 +139,9 @@ export function Chat({
               output,
             });
         } catch (error) {
+          if (++failures.current >= 3) halted.current = true;
+          if (halted.current && active.current)
+            setToolError(previous => previous || (error instanceof Error ? error.message : "Notebook tools failed. Reconnect the editor."));
           if (active.current)
             await addToolOutput({
               tool: toolCall.toolName,
@@ -221,6 +249,7 @@ export function Chat({
             Tool limit reached. Send another message to continue.
           </p>
         )}
+        {toolError && <p role="alert" className="chat-error">{toolError}</p>}
         {error && (
           <p role="alert" className="chat-error">
             {error.message}
@@ -234,6 +263,8 @@ export function Chat({
           if (!input.trim() || busy || disabled) return;
           count.current = 0;
           halted.current = false;
+          failures.current = 0;
+          setToolError("");
           void sendMessage({ text: input });
           setInput("");
         }}

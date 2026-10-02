@@ -26,7 +26,11 @@ def generation():
         return deployment
     # Local development also invalidates environments when their bundled assets change.
     digest = hashlib.sha256()
-    for path in [Path(__file__), Path(__file__).with_name("pyproject.toml"), *sorted(ASSETS.iterdir())]:
+    for path in [
+        Path(__file__),
+        Path(__file__).with_name("pyproject.toml"),
+        *sorted(ASSETS.iterdir()),
+    ]:
         if path.is_file():
             digest.update(path.name.encode())
             digest.update(path.read_bytes())
@@ -75,6 +79,19 @@ async def start(source: str, report=lambda kind, message: None):
             )
             if install.returncode:
                 raise RuntimeError(f"Jupyter dependency installation failed: {output.tail}")
+            report("progress", "Installing emoji and Unicode fonts…")
+            await instance.fs.write_text(
+                ".install-notebook-fonts.py", (ASSETS / "install_fonts.py").read_text()
+            )
+            fonts = await instance.run_process(
+                ".venv/bin/python",
+                [".install-notebook-fonts.py"],
+                stdout=output,
+                stderr=output,
+                kill_after=140,
+            )
+            if fonts.returncode:
+                raise RuntimeError("Notebook font installation failed")
             report("progress", "Configuring the notebook editor…")
             for filename, target in {
                 "jupyter_launcher.py": ".notebook-editor.py",

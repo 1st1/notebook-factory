@@ -176,6 +176,8 @@
           });
         }
         async function notebookTool(data) {
+          if (!["scroll_notebook", "read_notebook", "insert_cell", "replace_cell", "run_cell"].includes(data.tool))
+            throw new Error("Unsupported notebook tool. Reconnect the editor to update it.");
           var app = window.jupyterapp;
           var widget = notebookWidget(app);
           if (!widget || !widget.content || !widget.context || widget.context.path !== "notebook.ipynb")
@@ -209,16 +211,19 @@
           if (data.tool === "insert_cell") {
             if (!["code", "markdown"].includes(args.cell_type) || typeof args.source !== "string") throw new Error("Invalid cell.");
             var after = args.after_id === "" ? -1 : model.cells.findIndex(function (c) { return c.getId() === args.after_id; });
-            if (args.after_id !== "" && after < 0) throw new Error("Cell no longer exists. Read the notebook again.");
+            if (args.after_id !== "" && after < 0) return { error: "Insertion target no longer exists. Read the notebook again and choose a current cell ID.", code: "cell_missing" };
             var id = crypto.randomUUID();
             model.insertCell(after + 1, { id: id, cell_type: args.cell_type, source: args.source, metadata: {},
               ...(args.cell_type === "code" ? { outputs: [], execution_count: null } : {}) });
             return { cell_id: id, inserted: true };
           }
           var index = model.cells.findIndex(function (c) { return c.getId() === args.cell_id; });
-          if (index < 0) throw new Error("Cell no longer exists. Read the notebook again.");
+          if (index < 0) return { error: "Cell no longer exists. Read the notebook again and choose a current cell ID.", code: "cell_missing" };
           var cell = model.cells[index];
-          if (cell.getSource() !== args.expected_source) throw new Error("Cell changed since reading. Read the notebook again before editing or running.");
+          if (cell.getSource() !== args.expected_source) return {
+            error: "Cell source changed. Review current_cell and revise the operation using its source as expected_source. Do not retry the old arguments.",
+            code: "source_conflict", current_cell: { id: cell.getId(), source: cell.getSource().slice(0, 50000), truncated: cell.getSource().length > 50000 }
+          };
           if (data.tool === "replace_cell") {
             if (typeof args.source !== "string") throw new Error("Invalid source.");
             cell.setSource(args.source);
@@ -234,6 +239,12 @@
           }
           throw new Error("Unknown notebook tool.");
         }
+        window.addEventListener("message", function (event) {
+          var data = event.data;
+          if (event.source !== window.parent || event.origin !== __PARENT_ORIGIN__ ||
+              !data || data.type !== "vercel-notebook-capabilities" || data.token !== bridgeToken || typeof data.id !== "string") return;
+          event.source.postMessage({ type: "vercel-notebook-tool-result", id: data.id, result: { protocol: 2 } }, event.origin);
+        });
         window.addEventListener("message", function (event) {
           var data = event.data;
           if (event.source !== window.parent || event.origin !== __PARENT_ORIGIN__ ||

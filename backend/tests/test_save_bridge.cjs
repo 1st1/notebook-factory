@@ -81,12 +81,21 @@ test('chat reads unsaved cells and refuses stale replacements or untrusted messa
     return response;
   }
   assert.equal((await call('read_notebook', {})).result.cells[0].source, source);
-  assert.match((await call('replace_cell', { cell_id: 'cell-1', expected_source: 'old', source: 'bad' })).error, /changed/);
+  const conflict = (await call('replace_cell', { cell_id: 'cell-1', expected_source: 'old', source: 'bad' })).result;
+  assert.equal(conflict.code, 'source_conflict');
+  assert.equal(conflict.current_cell.source, source);
+  assert.equal(conflict.current_cell.truncated, false);
   assert.equal(source, 'print(42)');
   assert.equal(await call('replace_cell', {}, { origin: 'https://evil.test' }), undefined);
   assert.equal(await call('read_notebook', {}, { source: {} }), undefined);
   await call('replace_cell', { cell_id: 'cell-1', expected_source: source, source: 'print(43)' });
   assert.equal(source, 'print(43)');
+  const staleRun = (await call('run_cell', { cell_id: 'cell-1', expected_source: 'print(42)' })).result;
+  assert.equal(staleRun.current_cell.source, 'print(43)');
+  await call('replace_cell', { cell_id: 'cell-1', expected_source: staleRun.current_cell.source, source: 'print(44)' });
+  assert.equal(source, 'print(44)');
+  assert.equal((await call('run_cell', { cell_id: 'gone', expected_source: '' })).result.code, 'cell_missing');
+  assert.match((await call('future_tool', { cell_id: 'cell-1' })).error, /Unsupported notebook tool/);
 });
 
 // @lat: [[chat#Unfocused notebook saves]]
@@ -130,4 +139,19 @@ test('scroll tools page within the notebook and target stable cell IDs without c
   assert.deepEqual(calls, [[1, 'end'], [0, 'center']]);
   assert.match((await scroll({ direction: 'cell', cell_id: 'missing' })).error, /not found/);
   assert.match((await scroll({ direction: 'sideways' })).error, /Invalid/);
+});
+
+// @lat: [[chat#Bridge compatibility and recovery]]
+test('capability handshake is authenticated and works before the notebook loads', async () => {
+  const { handlers, parent } = bridge({ path: 'notebook.ipynb', save() {} });
+  let reply;
+  parent.postMessage = value => { reply = value; };
+  const message = { source: parent, origin: 'https://app.test', data: {
+    type: 'vercel-notebook-capabilities', token: 'token', id: 'handshake',
+  } };
+  await handlers.message({ ...message, origin: 'https://evil.test' });
+  assert.equal(reply, undefined);
+  await handlers.message(message);
+  assert.equal(reply.id, 'handshake');
+  assert.equal(reply.result.protocol, 2);
 });

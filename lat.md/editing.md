@@ -94,3 +94,9 @@ Editor environments belong to the deployment that created them. Opening or recon
 [[backend/main.py#provision_editor]] recovers the old Sandbox's latest saved notebook into the database before provisioning its replacement. It keeps the old environment if recovery or startup fails and stops it only after the new session is committed. Once replaced, old session tokens cannot save or publish. Unopened stale environments expire normally; already-open browsers are not forcibly interrupted at deployment time.
 
 A regression changes deployment generations, verifies same-deployment reuse, failed-replacement recovery, unpublished draft preservation, successful replacement, and stale-token rejection. Browser-only edits must reach Jupyter's normal save mechanism before recovery.
+
+## Plot font fallback
+
+New Sandboxes install Noto Emoji and Noto Sans JP alongside Matplotlib's default DejaVu Sans fallback, covering emoji and Japanese chart labels without hiding missing-glyph warnings.
+
+[[backend/assets/install_fonts.py#install]] downloads OFL-licensed fonts from a pinned Google Fonts revision, verifies SHA-256 checksums, retains licenses, and configures Matplotlib before the kernel starts. Emoji are monochrome. The assistant preserves the fallback list when styling plots. A live Sandbox draw verified slot-machine and chart emoji, wave dash, and Japanese text with missing-glyph warnings treated as errors. Existing environments require reconnecting after deployment; existing plot outputs must be rerun.
