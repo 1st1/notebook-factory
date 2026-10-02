@@ -12,6 +12,8 @@ import { Send, Square, X, RotateCcw, LoaderCircle } from "lucide-react";
 
 export function Chat({
   notebookId,
+  initialPrompt,
+  onInitialPromptSent,
   username,
   model,
   editor,
@@ -27,6 +29,8 @@ export function Chat({
   disabled,
 }: {
   notebookId: string;
+  initialPrompt?: string;
+  onInitialPromptSent: (id: string) => void;
   username: string;
   model?: string;
   editor: { url: string; token: string } | null;
@@ -236,6 +240,18 @@ export function Chat({
   });
   const busy = status === "submitted" || status === "streaming" || pending > 0;
   const history = useNotebookHistory(notebookId, null, messages, setMessages, busy, readOnly);
+  const initialPromptSent = useRef(false);
+  useEffect(() => {
+    if (!initialPrompt || initialPromptSent.current || !editor || editorStarting || readOnly || busy || disabled || !history.loaded || history.blocking || history.error) return;
+    initialPromptSent.current = true;
+    userTurn.current = true;
+    count.current = 0;
+    halted.current = false;
+    failures.current = 0;
+    setToolError("");
+    onInitialPromptSent(notebookId);
+    void sendMessage({ text: initialPrompt });
+  }, [initialPrompt, editor, editorStarting, readOnly, busy, disabled, history.loaded, history.blocking, history.error, notebookId, onInitialPromptSent, sendMessage]);
   const wasBusy = useRef(false);
   useEffect(() => {
     if (wasBusy.current && !busy) onTurnFinished(notebookId);
@@ -294,6 +310,7 @@ export function Chat({
       </header>
       {model && <div className="chat-model" title={model}>Model: {model.replace(/^gateway:/, "")}</div>}
       <div className="chat-messages" aria-live="polite">
+        {initialPrompt && <p className="chat-hint" role="status">Your initial prompt will be sent when the editor is ready: {initialPrompt}</p>}
         {history.loading && <p className="chat-hint chat-status" role="status"><LoaderCircle size={14} className="spin" aria-hidden="true" />Loading conversation…</p>}
         {history.saving && <p className="chat-hint">Saving conversation…</p>}
         {history.error && <div role="alert" className="chat-error">

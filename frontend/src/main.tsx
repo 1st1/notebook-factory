@@ -213,6 +213,11 @@ function App() {
   }, [searchQuery]);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
+  const [initialPrompt, setInitialPrompt] = useState("");
+  const [queuedPrompts, setQueuedPrompts] = useState<Record<string, string>>({});
+  const consumeInitialPrompt = useCallback((id: string) => {
+    setQueuedPrompts(items => { const next = { ...items }; delete next[id]; return next; });
+  }, []);
   const [editors, setEditors] = useState<Record<string, LiveEditor>>({});
   const editorsRef = useRef(editors);
   const editor = selected ? editors[selected] ?? null : null;
@@ -819,6 +824,7 @@ function App() {
             </div>
             {notebook && !authLoaded && <ChatLoading open={chatOpen} onClose={() => setChatOpen(false)} />}
             {authLoaded && chatIds.map(id => <Suspense key={id} fallback={<ChatLoading open={selected === id && chatOpen} onClose={() => setChatPanel({ id, open: false })} />}><Chat
+              initialPrompt={queuedPrompts[id]} onInitialPromptSent={consumeInitialPrompt}
               username={workspaceUsers.find(user => user.id === notebooks.find(n => n.id === id)?.owner_id)?.login || "User"}
               model={auth.chat_model} notebookId={id} editorStarting={startingIds.has(id)} readOnly={!auth.user || notebooks.find(n => n.id === id)?.owner_id !== auth.user.user_id}
               editor={editors[id]?.connected ? editors[id] : null}
@@ -847,22 +853,34 @@ function App() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-notebook-title"
-            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setCreating(false); } }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { e.preventDefault(); if (!busy) setCreating(false); }
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                if (!busy && title.trim()) e.currentTarget.requestSubmit();
+              }
+            }}
             onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => {
               e.preventDefault();
+              if (busy || !title.trim()) return;
+              const prompt = initialPrompt.trim();
               action("Creating notebook…", async () => {
                 const item = await api<Notebook>("/notebooks", { title });
                 await refresh();
-                setSelected(item.id);
+                choose(item.id);
                 setExpandedUsers(items => ({ ...items, [item.owner_id]: true }));
                 setCreating(false);
                 setTitle("");
+                setInitialPrompt("");
+                if (prompt) {
+                  setQueuedPrompts(items => ({ ...items, [item.id]: prompt }));
+                  void openEditor(item.id).catch(e => setError(e instanceof Error ? e.message : "Could not start the editor."));
+                }
               });
             }}
           >
-            <div className="eyebrow">SOMETHING NEW</div>
-            <h2 id="create-notebook-title">Give your idea a name.</h2>
+            <div className="eyebrow" id="create-notebook-title">NEW NOTEBOOK</div>
             <label htmlFor="title">Notebook title</label>
             <input
               id="title"
@@ -872,6 +890,12 @@ function App() {
               placeholder="An interesting experiment"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+            />
+            <label htmlFor="initial-prompt">Initial prompt <span className="optional-label">(optional)</span></label>
+            <textarea
+              id="initial-prompt" rows={3} maxLength={10000}
+              placeholder="What should the agent create in this notebook?"
+              value={initialPrompt} onChange={e => setInitialPrompt(e.target.value)}
             />
             <div className="modal-actions">
               <button

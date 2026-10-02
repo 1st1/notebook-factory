@@ -528,7 +528,8 @@ footer > span:last-child {
   color: #858d7b;
   margin-bottom: 8px;
 }
-.modal input {
+.modal input,
+.modal textarea {
   width: 100%;
   padding: 12px;
   border: 1px solid #d9dfcf;
@@ -749,8 +750,8 @@ main > .error > button { flex-shrink: 0; }
 .chat-reasoning { margin: 8px 0; padding-left: 10px; border-left: 2px solid #d5dccd; color: #79836f; font-size: 12px; }
 .chat-reasoning summary { cursor: pointer; user-select: none; }
 
-.chat-tool > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 0; }
-.chat-tool > summary small { margin-left: auto; color: #8a9282; font-size: 10px; }
+.chat-tool > summary, .chat-tool-summary { display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 0; }
+.chat-tool > summary small, .chat-tool-summary small { margin-left: auto; color: #8a9282; font-size: 10px; }
 .chat-tool > summary::before { content: "▸"; }
 .chat-tool[open] > summary::before { content: "▾"; }
 .chat-tool-caption { font-size: 10px; color: #8a9282; margin: 8px 0 4px; }
@@ -832,3 +833,11 @@ main { padding-top: 16px; }
   .notebook-header-actions { flex-basis: 100%; justify-content: flex-end; }
   main { padding-top: 8px; }
 }
+
+.modal input + label { margin-top: 20px; }
+.modal textarea { resize: vertical; min-height: 76px; font: inherit; }
+.modal .eyebrow { margin-bottom: 24px; }
+.modal .optional-label { font-weight: normal; opacity: .7; }
+.modal textarea + .modal-actions { margin-top: 20px; }
+
+.chat-tool-summary { cursor: default; }

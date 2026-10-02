@@ -56,7 +56,7 @@ An authenticated handshake regression runs before document readiness; document t
 
 ## Tool argument streaming
 
-[[frontend/src/ToolActivity.tsx#ToolActivity]] shows partial tool arguments as the model generates them, including a growing cell-source preview. Completed operations collapse into expandable input and result details.
+[[frontend/src/ToolActivity.tsx#ToolActivity]] shows streaming cell-source previews only for insert and replace tools. Other tools show concise status and errors without JSON payloads. Completed cell edits retain expandable inputs and results.
 
 Tool cards distinguish argument generation from execution and errors. Code previews scroll within a bounded area; result previews are capped at 12 KB. The Python SDK forwards argument deltas immediately, while execution still waits for complete arguments. A protocol regression verifies deltas arrive before completion and dispatch; browser checks verify code appears before a cell tool executes. Execution output is displayed when the tool finishes, not streamed from the kernel.
 
@@ -106,3 +106,9 @@ Owner chat works without an editor and does not start a Sandbox. Its tools are l
 [[backend/chat.py#VIEW_TOOLS]] and [[backend/chat.py#VIEW_SYSTEM]] answer questions about existing content in chat. Creation and demonstration requests, including open-ended requests for a chart or trick, target the notebook and request editing consent instead of substituting inline chat content. Editing instructions require one focused notebook example and describe automatic publication. [[frontend/src/Chat.tsx#Chat]] reads published cells and bounded text outputs from the download endpoint. The permission tool displays Yes/No buttons. No returns a declined result without starting anything. Yes awaits editor and document readiness, then continues the same turn using the active editor token and full editing tools. The assistant rereads the live draft because it may differ from published content. A request arriving during an already-authorized editor startup waits for that startup without asking again. If the editor connects while consent is displayed, the pending request resolves automatically and the redundant prompt disappears.
 
 Browser verification covers published context, no Sandbox on questions or refusal, accepting consent, retaining the conversation, and authenticated mode changes on continuation. Sending messages remains owner-only in both modes; other viewers can read saved conversations.
+
+## Initial notebook prompt tests
+
+The New notebook dialog accepts an optional initial agent prompt. Cmd+Enter or Ctrl+Enter submits the form; a blank prompt creates a notebook without starting an editor.
+
+A supplied prompt authorizes immediate editor startup. Chat waits for editor readiness and history loading, then sends it once with the editor token, even if the user navigates away. The pending prompt remains visible during startup and survives startup failure for a later retry. Browser tests cover delayed startup, navigation, authenticated delivery, duplicate prevention, and creation without a prompt.

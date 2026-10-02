@@ -17,6 +17,7 @@ const server=http.createServer(async(req,res)=>{
  if(u.pathname==='/api/search')return res.end(JSON.stringify(u.searchParams.get('q')==='quantum'?[notebooks.find(n=>n.id==='two')]:[]));
  if(u.pathname==='/api/workspace')return res.end(JSON.stringify({users:workspaceUsers,notebooks}));
  if(u.pathname==='/api/users')return res.end(JSON.stringify(workspaceUsers));
+ if(u.pathname==='/api/notebooks'&&req.method==='POST'){const item={id:'created-'+notebooks.length,title:body.title,owner_id:1,revision:1,updated_at:1};notebooks.push(item);return res.end(JSON.stringify(item));}
  if(u.pathname==='/api/notebooks')return res.end(JSON.stringify(notebooks));
  if(u.pathname==='/api/auth/me')return res.end(JSON.stringify({can_edit:true,user:authProfile,configured:true}));
  if(u.pathname.endsWith('/chat-history')){const v=histories.get(id)||{messages:[],revision:0};if(req.method==='PUT'){histories.set(id,{messages:body.messages,revision:body.revision+1});return res.end(JSON.stringify({revision:body.revision+1}));}if(holdHistory){historyWaiters.push(()=>res.end(JSON.stringify(v)));return;}return res.end(JSON.stringify(v));}
@@ -140,6 +141,34 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  await page.getByRole('button',{name:'Periodic new notebook',exact:true}).waitFor();
  assert.equal(await page.locator('h1').textContent(),beforeRefreshHeading,'refresh preserves selected notebook');
  assert.equal(JSON.stringify(boots),beforeRefreshBoots,'refresh does not remount editors');
+ // @lat: [[chat#Initial notebook prompt tests]]
+ await page.getByRole('button',{name:'New notebook',exact:true}).click();
+ assert.equal(await page.getByText('Give your idea a name.').count(),0);
+ await page.getByLabel('Notebook title').fill('Prompt notebook');
+ await page.getByLabel('Initial prompt').fill('Create a math chart');
+ holdStart=true;heldStart=undefined;
+ const beforePromptRequests=messagesSeen.length;
+ await page.getByLabel('Initial prompt').press('Meta+Enter');
+ await page.getByRole('heading',{name:/^Prompt notebook/}).waitFor();
+ for(let i=0;i<30&&!heldStart;i++)await tick();assert(heldStart,'creation immediately starts editor');
+ assert.equal(messagesSeen.length,beforePromptRequests,'prompt waits for editor readiness');
+ await page.getByRole('button',{name:'Notebook one',exact:true}).click();
+ holdStart=false;heldStart();
+ for(let i=0;i<60&&!messagesSeen.slice(beforePromptRequests).some(m=>m.messages.some(v=>v.parts.some(p=>p.text==='Create a math chart')));i++){await page.clock.fastForward(300);await tick();}
+ const promptRequests=messagesSeen.slice(beforePromptRequests).filter(m=>m.messages.some(v=>v.parts.some(p=>p.text==='Create a math chart')));
+ assert(promptRequests.length>0,'initial prompt sends even after navigating away');
+ assert(promptRequests.every(m=>m.token),'initial prompt uses editor authentication');
+ const created=notebooks.find(n=>n.title==='Prompt notebook');
+ assert.equal(starts.filter(id=>id===created.id).length,1);
+ await page.getByRole('button',{name:/^Prompt notebook/}).click();
+ await page.getByText('Editor is ready.',{exact:true}).last().waitFor();
+ assert.equal(await page.locator('.chat-panel:not([hidden]) .chat-message.user').count(),1,'prompt is sent exactly once');
+ const beforeBlankStarts=starts.length;
+ await page.getByRole('button',{name:'New notebook',exact:true}).click();
+ await page.getByLabel('Notebook title').fill('Blank notebook');
+ await page.getByLabel('Notebook title').press('Control+Enter');
+ await page.getByRole('heading',{name:'Blank notebook',exact:true}).waitFor();
+ assert.equal(starts.length,beforeBlankStarts,'blank prompt does not start editor');
  authProfile={login:'amy',user_id:2};
  const amyPage=await browser.newPage();await amyPage.goto('http://127.0.0.1:5187/?notebook=other');
  await amyPage.getByRole('textbox',{name:'Message'}).waitFor();
