@@ -146,8 +146,9 @@ export function Chat({
   }, [messages, pending]);
   return (
     <aside className="chat-panel" hidden={!open} aria-label="Notebook chat">
-      <header>
-        <strong>Notebook chat</strong>
+      <header className="surface-toolbar">
+        <span><span className="green-dot" />NOTEBOOK CHAT</span>
+        <span className="chat-header-actions">
         <button
           className="icon-button"
           aria-label="New chat"
@@ -168,6 +169,7 @@ export function Chat({
         >
           <X size={18} />
         </button>
+        </span>
       </header>
       <div className="chat-messages" aria-live="polite">
         {!messages.length && (

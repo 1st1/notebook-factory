@@ -97,6 +97,8 @@ It also checks bundled rendering templates, workspace-relative launcher paths, p
 
 [Frontend styles](../frontend/src/style.css) fixes the app to the dynamic viewport height and suppresses outer document scrolling and overscroll. The notebook surface fills the remaining space below the notebook title and actions.
 
+Notebook and chat panels share compact, aligned headers; chat actions are grouped at the right. Errors appear below the workspace with matching horizontal margins. Title spacing is compact.
+
 The breadcrumb toolbar is omitted. A standalone mobile navigation button opens the sidebar on narrow screens.
 
 Published and editor iframes scroll internally rather than imposing minimum heights on the page. The sidebar notebook list scrolls independently with overscroll disabled; sidebar branding and account controls stay fixed. Setup output has a bounded scroll area. Compact spacing preserves notebook space on short landscape screens.

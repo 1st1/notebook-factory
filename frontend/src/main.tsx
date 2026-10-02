@@ -433,28 +433,6 @@ function App() {
         >
           <Menu size={19} />
         </button>
-        {error && (
-          <div className="error" role="alert">
-            <span>{error}</span>
-            {editor && (
-              <button
-                disabled={!!busy || chatBusy}
-                onClick={() =>
-                  action("Reconnecting…", async () => {
-                    setEditor(
-                      await api<Editor>(`/notebooks/${selected}/editor`, {}),
-                    );
-                  })
-                }
-              >
-                Reconnect editor
-              </button>
-            )}
-            <button aria-label="Dismiss error" onClick={() => setError("")}>
-              <X size={16} />
-            </button>
-          </div>
-        )}
         {loading ? (
           <div className="empty">
             <LoaderCircle className="spin" />
@@ -624,6 +602,28 @@ function App() {
                 Everyone can read. The workspace owner can create and edit.
               </small>
             )}
+          </div>
+        )}
+        {error && (
+          <div className="error" role="alert">
+            <span>{error}</span>
+            {editor && (
+              <button
+                disabled={!!busy || chatBusy}
+                onClick={() =>
+                  action("Reconnecting…", async () => {
+                    setEditor(
+                      await api<Editor>(`/notebooks/${selected}/editor`, {}),
+                    );
+                  })
+                }
+              >
+                Reconnect editor
+              </button>
+            )}
+            <button aria-label="Dismiss error" onClick={() => setError("")}>
+              <X size={16} />
+            </button>
           </div>
         )}
       </main>
