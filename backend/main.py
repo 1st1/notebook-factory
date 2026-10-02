@@ -249,6 +249,8 @@ async def open_editor(id: str, request: Request):
 
 async def provision_editor(id, claim, report=None):
     created = None
+    retired = None
+    generation = editor.generation()
     try:
         row = await get_notebook(id)
         if row["editor"]:
@@ -256,7 +258,19 @@ async def provision_editor(id, claim, report=None):
             try:
                 source = await editor.read(old)
                 validate(source)
-                return old
+                if old.get("generation") == generation:
+                    return old
+                if report:
+                    report("progress", "Updating the environment for this deployment…")
+                # Back up the most recent Jupyter-saved draft before replacement.
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        update(notebooks)
+                        .where(notebooks.c.id == id, notebooks.c.claim == claim)
+                        .values(source=source)
+                    )
+                row["source"] = source
+                retired = old
             except HTTPException as error:
                 if error.status_code != 410:
                     raise
@@ -268,6 +282,7 @@ async def provision_editor(id, claim, report=None):
             if report
             else await editor.start(row["source"])
         )
+        created = {**created, "generation": generation}
         async with engine.begin() as conn:
             result = await conn.execute(
                 update(notebooks)
@@ -276,6 +291,8 @@ async def provision_editor(id, claim, report=None):
             )
             if result.rowcount != 1:
                 raise RuntimeError("Editor provisioning lease expired")
+        if retired:
+            await stop_closed_editor(retired)
         return created
     except HTTPException:
         raise

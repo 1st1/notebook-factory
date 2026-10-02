@@ -1,7 +1,9 @@
 """Jupyter runs in Sandbox; its WebSockets connect directly from the iframe."""
 
+import hashlib
 import io
 import json
+import os
 import re
 import secrets
 from pathlib import Path
@@ -16,6 +18,19 @@ from config import APP_URL, MAX_BYTES
 
 ASSETS = Path(__file__).with_name("assets")
 PORT = 8888
+
+
+def generation():
+    deployment = os.getenv("VERCEL_DEPLOYMENT_ID") or os.getenv("VERCEL_URL")
+    if deployment:
+        return deployment
+    # Local development also invalidates environments when their bundled assets change.
+    digest = hashlib.sha256()
+    for path in sorted(ASSETS.iterdir()):
+        if path.is_file():
+            digest.update(path.name.encode())
+            digest.update(path.read_bytes())
+    return "local-" + digest.hexdigest()[:16]
 
 
 class SetupOutput(io.TextIOBase):

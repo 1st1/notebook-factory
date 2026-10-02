@@ -64,6 +64,7 @@ def test_invalid_sessions_and_oauth_state(client):
 def test_drafts_publish_close_and_reopen(client, monkeypatch):
     id = create(client)
     first = {
+        "generation": main.editor.generation(),
         "name": "sandbox-a",
         "url": "https://example.test/secret/doc/tree/notebook.ipynb",
         "token": "secret",
@@ -214,7 +215,12 @@ def test_setup_stream_progress_ready_and_reuse(client, monkeypatch):
     import json
 
     id = create(client)
-    result = {"name": "streamed", "url": "https://example.test/editor", "token": "t"}
+    result = {
+        "generation": main.editor.generation(),
+        "name": "streamed",
+        "url": "https://example.test/editor",
+        "token": "t",
+    }
 
     async def start(source, report):
         report("progress", "Installing Python and JupyterLab…")
@@ -257,7 +263,12 @@ def test_setup_stream_failure_releases_lease(client, monkeypatch):
 
 def test_close_detaches_before_background_shutdown(client, monkeypatch):
     id = create(client)
-    result = {"name": "closing", "url": "https://example.test/editor", "token": "t"}
+    result = {
+        "generation": main.editor.generation(),
+        "name": "closing",
+        "url": "https://example.test/editor",
+        "token": "t",
+    }
     monkeypatch.setattr(main.editor, "start", AsyncMock(return_value=result))
     monkeypatch.setattr(main.editor, "read", AsyncMock(return_value=new_notebook("Durable draft")))
     client.post(f"/api/notebooks/{id}/editor")
@@ -492,3 +503,33 @@ def test_chat_requires_active_editor(client):
     assert response.status_code == 409
     response = client.post(f"/api/notebooks/{id}/chat", content="x" * 1_000_001)
     assert response.status_code == 413
+
+
+# @lat: [[editing#Deployment generations]]
+def test_deployment_replaces_editor_without_losing_saved_draft(client, monkeypatch):
+    id = create(client)
+    monkeypatch.setattr(main.editor, "generation", lambda: "deployment-a")
+    start = AsyncMock(return_value={"name": "old", "token": "old", "url": "https://example.test"})
+    read = AsyncMock(return_value=new_notebook("Recovered draft"))
+    stop = AsyncMock()
+    monkeypatch.setattr(main.editor, "start", start)
+    monkeypatch.setattr(main.editor, "read", read)
+    monkeypatch.setattr(main.editor, "stop", stop)
+    first = client.post(f"/api/notebooks/{id}/editor", json={}).json()
+    assert first["generation"] == "deployment-a"
+    assert client.post(f"/api/notebooks/{id}/editor", json={}).json() == first
+    assert start.await_count == 1
+    monkeypatch.setattr(main.editor, "generation", lambda: "deployment-b")
+    start.side_effect = RuntimeError("Unavailable")
+    assert client.post(f"/api/notebooks/{id}/editor", json={}).status_code == 502
+    stop.assert_not_awaited()
+    row = client.portal.call(main.get_notebook, id)
+    assert "Recovered draft" in row["source"]
+    assert "Recovered draft" not in row["published"]
+    start.side_effect = None
+    start.return_value = {"name": "new", "token": "new", "url": "https://new.test"}
+    result = client.post(f"/api/notebooks/{id}/editor", json={}).json()
+    assert result["generation"] == "deployment-b"
+    assert "Recovered draft" in start.call_args.args[0]
+    stop.assert_awaited_once_with(first)
+    assert client.post(f"/api/notebooks/{id}/save", json={"token": "old"}).status_code == 409
