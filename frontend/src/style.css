@@ -358,8 +358,7 @@ h1 {
   border-radius: 2px;
   background: #d4b46a;
 }
-.notebook-surface,
-.setup-progress {
+.notebook-surface {
   margin: 0 46px;
 }
 .notebook-surface {
@@ -552,8 +551,7 @@ footer > span:last-child {
     padding-left: 70px;
     padding-right: 70px;
   }
-  .notebook-surface,
-  .setup-progress {
+  .notebook-surface {
     margin-left: 70px;
     margin-right: 70px;
   }
@@ -573,8 +571,7 @@ footer > span:last-child {
   .notebook-heading {
     padding: 20px 26px;
   }
-  .notebook-surface,
-  .setup-progress {
+  .notebook-surface {
     margin: 0 26px;
   }
   .title-row {
@@ -621,8 +618,7 @@ footer > span:last-child {
   .notebook-heading {
     padding: 16px 20px;
   }
-  .notebook-surface,
-  .setup-progress {
+  .notebook-surface {
     margin: 0 12px;
   }
   .metadata {
@@ -668,24 +664,26 @@ footer > span:last-child {
 }
 
 .setup-progress {
-  display: flex;
-  flex-direction: column;
-  flex: 0 1 auto;
+  position: relative;
+  flex: 0 0 auto;
   min-height: 0;
-  max-height: 35dvh;
-  margin-bottom: 20px;
-  border: 1px solid var(--line, #dde1d5);
-  border-radius: 10px;
+  margin: 0;
   overflow: hidden;
+  border-bottom: 1px solid #dde1d5;
 }
-.setup-progress .progress { flex-shrink: 0; margin: 0; padding: 16px 20px; }
-.setup-progress .progress small { margin-left: auto; white-space: nowrap; }
+.setup-status { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 60%; padding: 3px 0; font: inherit; color: #7b8573; background: none; border: 0; cursor: pointer; text-align: left; }
+.setup-status span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.setup-status svg, .setup-status small { flex-shrink: 0; }
+.setup-status small { font-size: 9px; opacity: .8; }
+.setup-status:hover { color: #405333; }
+.setup-close { position: absolute; top: 6px; right: 6px; display: flex; padding: 4px; border: 1px solid #687260; border-radius: 4px; color: #e2e8d9; background: #252b23; cursor: pointer; }
 .setup-output {
   min-height: 0;
   overscroll-behavior: none;
   margin: 0;
   padding: 16px 20px;
-  max-height: calc(4 * 1.6em + 32px);
+  max-height: calc(5 * 1.6em + 32px);
+  padding-right: 38px;
   overflow: auto;
   background: #252b23;
   color: #e2e8d9;

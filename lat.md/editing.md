@@ -45,7 +45,7 @@ The server sends heartbeat comments every ten seconds while waiting and disables
 
 Prepared environments report restore, configuration, Jupyter startup, and readiness stages instead of installation logs. The browser shows elapsed seconds and retains errors for inspection. The log event remains supported; its browser buffer is bounded to 20,000 characters and long lines wrap within the notebook surface's margins.
 
-The setup panel shows timestamped milestones with elapsed seconds for VM creation, Jupyter readiness, notebook file preparation, browser notebook loading, and observed kernel startup/connection. The log is capped at four visible lines with scrolling. Completed events remain in a collapsed disclosure.
+The notebook title bar shows the latest startup milestone and elapsed seconds. Clicking the status opens a closable panel directly below the header with the latest five visible log lines and scrolling. Logs include timestamped milestones for VM creation, Jupyter readiness, notebook file preparation, browser loading, and observed kernel startup/connection; they remain available after readiness.
 
 Startup stage, bounded logs, and the original start timestamp are tracked per notebook, including progress received while hidden. Navigation restores that notebook’s current progress without resetting its elapsed timer.
 

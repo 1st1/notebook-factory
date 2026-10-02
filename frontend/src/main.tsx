@@ -175,6 +175,8 @@ function App() {
   const setupSeconds = setup ? Math.floor(((setup.finished ?? Date.now()) - setup.started) / 1000) : 0;
   const [, tickSetup] = useState(0);
   const setupOutput = useRef<HTMLPreElement>(null);
+  const [setupPanels, setSetupPanels] = useState<Record<string, boolean>>({});
+  const setupPanelOpen = selected ? !!setupPanels[selected] : false;
   useEffect(() => {
     if (setupStarted === null) return;
     const timer = setInterval(() => tickSetup(value => value + 1), 1000);
@@ -183,7 +185,7 @@ function App() {
   useEffect(() => {
     const output = setupOutput.current;
     if (output) output.scrollTop = output.scrollHeight;
-  }, [selected, setupLog]);
+  }, [selected, setupLog, setupPanelOpen]);
   function updateSetup(id: string, update: (current: SetupProgress) => SetupProgress) {
     setSetups(items => items[id] ? { ...items, [id]: update(items[id]) } : items);
   }
@@ -696,16 +698,7 @@ function App() {
                 )}
               </div>
             )}
-            {(setupStage || setupLog) && (
-              <details open={!editorReady} className="setup-progress" aria-label="Environment setup">
-                <summary className="progress" role="status">
-                  {setupStarted !== null && <LoaderCircle size={16} className="spin" />}
-                  <span>{editorReady ? "Editor ready" : setupStage}</span>
-                  <small>{setupSeconds}s elapsed</small>
-                </summary>
-                {setupLog && <pre ref={setupOutput} className="setup-output" aria-label="Startup events">{setupLog}</pre>}
-              </details>
-            )}
+
 
           </>
         ) : notebooks.length > 0 ? (
@@ -759,6 +752,17 @@ function App() {
                 <div className="notebook-panel-title" title={activeEditor ? saved || "Changes save automatically" : `Updated ${date} · Revision ${notebook?.revision}`}>
                   <span className={activeEditor ? "green-dot" : "gray-dot"} />
                   <h1>{notebook?.title}</h1>
+                  {(setupStage || setupLog) && <button
+                    className="setup-status" aria-label="Editor startup status" aria-expanded={setupPanelOpen}
+                    aria-controls="startup-events-panel"
+                    title={`${editorReady ? "Editor ready" : setupStage} · ${setupSeconds}s elapsed`}
+                    onClick={() => selected && setSetupPanels(items => ({ ...items, [selected]: !setupPanelOpen }))}
+                  >
+                    {setupStarted !== null && <LoaderCircle size={12} className="spin" aria-hidden="true" />}
+                    <span role="status">{editorReady ? "Editor ready" : setupStage}</span>
+                    <small>{setupSeconds}s</small>
+                  </button>}
+
                 </div>
                 {notebook && (
                 <div className="actions notebook-header-actions">
@@ -810,6 +814,10 @@ function App() {
                 </div>
                 )}
               </header>
+              {setupPanelOpen && (setupStage || setupLog) && <section className="setup-progress" id="startup-events-panel" aria-label="Environment setup">
+                <button className="setup-close" aria-label="Close startup events" onClick={() => selected && setSetupPanels(items => ({ ...items, [selected]: false }))}><X size={14} /></button>
+                <pre ref={setupOutput} className="setup-output" aria-label="Startup events">{setupLog}</pre>
+              </section>}
               {Object.values(editors).map(current => <iframe
                 key={current.token} ref={node => {
                   if (node) frames.current.set(current.token, node); else frames.current.delete(current.token);
