@@ -68,8 +68,8 @@ export function useNotebookHistory(notebookId: string, token: string | null, mes
   return {
     loaded, loading, saving, error,
     blocking: loading || saving || (dirty && !error),
-    // Reading history must not lock navigation; pending writes still protect the conversation.
-    navigationBlocking: saving || (dirty && !error),
+    // Pending writes protect publication and tab close, but do not block navigation.
+    persistenceBlocking: saving || (dirty && !error),
     reloadRequired,
     clearError: () => setError(""),
     retry: () => {

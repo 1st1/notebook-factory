@@ -4,7 +4,6 @@ import {
   lastAssistantMessageIsCompleteWithToolCalls,
 } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ToolActivity } from "./ToolActivity";
@@ -15,9 +14,11 @@ export function Chat({
   notebookId,
   model,
   editor,
-  frame,
+  getFrame,
+  selected,
   open,
   onClose,
+  onHistoryLoaded,
   onBusy,
   onRename,
   onEnterEditing,
@@ -27,11 +28,13 @@ export function Chat({
   model?: string;
   editor: { url: string; token: string } | null;
   onEnterEditing: () => Promise<void>;
-  frame: RefObject<HTMLIFrameElement | null>;
+  getFrame: () => HTMLIFrameElement | null;
+  selected: boolean;
   open: boolean;
   disabled: boolean;
   onClose: () => void;
-  onBusy: (busy: boolean) => void;
+  onHistoryLoaded: (notebookId: string, hasHistory: boolean) => void;
+  onBusy: (notebookId: string, busy: boolean, working: boolean) => void;
   onRename: (id: string, title: string) => void;
 }) {
   const currentEditor = useRef(editor);
@@ -124,7 +127,7 @@ export function Chat({
             if (active.current) await addToolOutput({ tool: toolCall.toolName, toolCallId: toolCall.toolCallId, output: result });
             return;
           }
-          const target = frame.current?.contentWindow;
+          const target = getFrame()?.contentWindow;
           if (!target) throw new Error("Editor is unavailable.");
           const origin = new URL(editor.url).origin;
           const request = (type: string, timeout: number) => {
@@ -220,9 +223,22 @@ export function Chat({
   });
   const busy = status === "submitted" || status === "streaming" || pending > 0;
   const history = useNotebookHistory(notebookId, null, messages, setMessages, busy);
+  const historyReported = useRef(false);
   useEffect(() => {
-    onBusy(busy || history.navigationBlocking);
-  }, [busy, history.navigationBlocking, onBusy]);
+    if (!selected) { historyReported.current = false; return; }
+    if (!history.loaded || historyReported.current) return;
+    historyReported.current = true;
+    onHistoryLoaded(notebookId, messages.length > 0);
+  }, [selected, history.loaded, messages.length, notebookId, onHistoryLoaded]);
+  useEffect(() => {
+    onBusy(notebookId, busy || history.persistenceBlocking, busy && !consent);
+  }, [busy, consent, history.persistenceBlocking, notebookId, onBusy]);
+  useEffect(() => {
+    if (!busy && !history.persistenceBlocking) return;
+    const unload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", unload);
+    return () => window.removeEventListener("beforeunload", unload);
+  }, [busy, history.persistenceBlocking]);
   useEffect(() => { compatible.current = false; }, [editor?.token]);
   useEffect(() => {
     active.current = true;
@@ -230,12 +246,12 @@ export function Chat({
       active.current = false;
       consentRef.current?.resolve(false);
       void stop();
-      onBusy(false);
+      onBusy(notebookId, false, false);
     };
-  }, [stop, onBusy]);
+  }, [stop, notebookId, onBusy]);
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
-  }, [messages, pending]);
+    if (open) bottom.current?.scrollIntoView({ block: "end" });
+  }, [messages, pending, open]);
   return (
     <aside className="chat-panel" hidden={!open} aria-label="Notebook chat">
       <header className="surface-toolbar">

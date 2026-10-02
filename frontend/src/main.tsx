@@ -168,8 +168,17 @@ function App() {
   const [editors, setEditors] = useState<Record<string, LiveEditor>>({});
   const editorsRef = useRef(editors);
   const editor = selected ? editors[selected] ?? null : null;
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatBusy, setChatBusy] = useState(false);
+  const [chatPanel, setChatPanel] = useState<{ id: string | null; open: boolean }>({ id: null, open: false });
+  const chatOpen = chatPanel.id === selected && chatPanel.open;
+  const setChatOpen = (open: boolean) => setChatPanel({ id: selected, open });
+  const [chatStates, setChatStates] = useState<Record<string, { busy: boolean; working: boolean }>>({});
+  const chatBusy = !!selected && !!chatStates[selected]?.busy;
+  const [visitedChats, setVisitedChats] = useState<string[]>([]);
+  const chatIds = [...new Set([...visitedChats, ...(selected ? [selected] : [])])].filter(id => notebooks.some(n => n.id === id));
+  useEffect(() => { if (selected) setVisitedChats(ids => ids.includes(selected) ? ids : [...ids, selected]); }, [selected]);
+  const reportChatBusy = useCallback((id: string, busy: boolean, working: boolean) => {
+    setChatStates(states => ({ ...states, [id]: { busy, working } }));
+  }, []);
   const startingEditors = useRef(new Map<string, Promise<void>>());
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
@@ -180,13 +189,11 @@ function App() {
   const [saved, setSaved] = useState("");
   const [mobile, setMobile] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
-  const frame = useRef<HTMLIFrameElement>(null);
   const saving = useRef<AbortController | null>(null);
   const closingRef = useRef(false);
   const saveEpoch = useRef(0);
   const activeEditor = editor?.connected ? editor : null;
   const editorReady = !!activeEditor?.ready;
-  frame.current = editor ? frames.current.get(editor.token) ?? null : null;
   const notebook = notebooks.find((n) => n.id === selected);
 
   function putEditor(id: string, value: LiveEditor | null) {
@@ -201,6 +208,10 @@ function App() {
     const current = editorsRef.current[id];
     if (current?.token === token) putEditor(id, { ...current, ...patch });
   }
+
+  const showSavedChat = useCallback((id: string, hasHistory: boolean) => {
+    if (selectedRef.current === id && hasHistory) setChatPanel({ id, open: true });
+  }, []);
 
   const renameNotebook = useCallback((id: string, title: string) => {
     setNotebooks(items => {
@@ -477,7 +488,8 @@ function App() {
     }
   }
   function choose(id: string | null) {
-    if (chatBusy || closingRef.current || id === selected) return;
+    if (closingRef.current || id === selected) return;
+    setChatPanel({ id, open: false });
     if (editor?.ready) void saveEditor(editor).catch(() => setError("A notebook draft could not be saved. Keep this tab open; autosave will retry."));
     selectedRef.current = id;
     setSelected(id); setMobile(false); setError(""); setSaved("");
@@ -536,7 +548,7 @@ function App() {
               ? "Only 1st1 can create notebooks"
               : undefined
           }
-          disabled={!!busy || chatBusy || (!!auth.user && !auth.can_edit)}
+          disabled={!!busy || (!!auth.user && !auth.can_edit)}
           onClick={() =>
             auth.can_edit
               ? setCreating(true)
@@ -567,12 +579,12 @@ function App() {
                 className={
                   "notebook-link " + (n.id === selected ? "active" : "")
                 }
-                disabled={!!busy || chatBusy}
+                disabled={!!busy}
                 onClick={() => choose(n.id)}
               >
                 <BookOpen size={16} />
                 <span>{n.title}</span>
-                {editors[n.id]?.ready && editors[n.id]?.connected && <span className="running-editor-dot" aria-label="Editor connected" title="Editor running" />}
+                {chatStates[n.id]?.working ? <span className="agent-working-dots" aria-label="Agent working" title="Agent working"><i /><i /><i /></span> : editors[n.id]?.ready && editors[n.id]?.connected && <span className="running-editor-dot" aria-label="Editor connected" title="Editor running" />}
               </button>
             ))}
           {!loading && !notebooks.length && (
@@ -604,7 +616,7 @@ function App() {
                 <button
                   className="icon-button"
                   title="Sign out"
-                  disabled={Object.keys(editors).length > 0}
+                  disabled={Object.keys(editors).length > 0 || Object.values(chatStates).some(state => state.busy)}
                 >
                   <LogOut size={16} />
                 </button>
@@ -668,7 +680,7 @@ function App() {
                       }}
                     ><Trash2 size={16} strokeWidth={1.5} /></button>
                   )}
-                  {auth.can_edit && <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(value => !value)}><MessageSquare size={16}/>Chat</button>}
+                  {auth.can_edit && <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(!chatOpen)}><MessageSquare size={16}/>Chat</button>}
                   {auth.can_edit && (!activeEditor ? (
                     <button className="button primary" disabled={!!busy || setupStarted !== null} onClick={() => { void openEditor(selected!).catch(e => setError(e.message)); }}>
                       <Pencil size={15} /> Edit notebook
@@ -774,7 +786,6 @@ function App() {
               {Object.values(editors).map(current => <iframe
                 key={current.token} ref={node => {
                   if (node) frames.current.set(current.token, node); else frames.current.delete(current.token);
-                  if (current.notebookId === selectedRef.current) frame.current = node;
                 }} title={`Jupyter editor: ${notebooks.find(item => item.id === current.notebookId)?.title || current.notebookId}`} src={current.url}
                 style={editorReady && current.notebookId === selected ? undefined : { display: "none" }} referrerPolicy="no-referrer"
                 allow="clipboard-read; clipboard-write"
@@ -784,7 +795,14 @@ function App() {
                 notebook={notebook} version={renderVersion}
               />}
             </div>
-            {notebook && auth.can_edit && <Suspense fallback={null}><Chat model={auth.chat_model} key={selected!} notebookId={selected!} editor={activeEditor} frame={frame} disabled={!!busy} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy} onRename={renameNotebook} onEnterEditing={() => openEditor(selected!)} /></Suspense>}
+            {auth.can_edit && chatIds.map(id => <Suspense key={id} fallback={null}><Chat
+              model={auth.chat_model} notebookId={id} selected={selected === id}
+              editor={editors[id]?.connected ? editors[id] : null}
+              getFrame={() => { const current = editorsRef.current[id]; return current ? frames.current.get(current.token) ?? null : null; }}
+              disabled={selected === id && !!busy} open={selected === id && chatOpen}
+              onClose={() => setChatPanel({ id, open: false })} onHistoryLoaded={showSavedChat}
+              onBusy={reportChatBusy} onRename={renameNotebook} onEnterEditing={() => openEditor(id)}
+            /></Suspense>)}
             </div>
         {error && (
           <div className="error" role="alert">

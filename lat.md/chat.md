@@ -18,7 +18,7 @@ The [Jupyter bridge](../backend/assets/jupyter_bridge.js) operates on the curren
 
 Read returns cell IDs, sources, and text/error outputs, excluding image data. Replace and run require exact expected source, rejecting stale edits. Insert creates a new code or markdown cell; execution uses Jupyter's run-cell command so outputs and charts appear normally. The scroll tool moves the notebook up/down by a page, to its top/bottom, or to a cell ID with start/center/end alignment. It uses Jupyter's virtualized-list API to reveal offscreen cells without changing selection or notebook content. The prompt instructs the assistant to reveal edited cells and outputs. Tools serialize and validate the parent origin, window identity, session token, and request ID.
 
-Save & exit and notebook navigation are disabled during assistant work. Closing the chat sidebar keeps the session running. Stop reply cancels model streaming and skips queued tools; an already-started cell continues running and can be interrupted in Jupyter. Tool response waits time out after two minutes. Normal draft autosaving, explicit publication, and discard semantics still apply.
+Save & exit is disabled during assistant work on that notebook. Navigation stays available; each visited notebook retains its mounted chat and tools remain bound to its own editor, even while hidden. Closing the chat sidebar keeps the session running. Stop reply cancels model streaming and skips queued tools; an already-started cell continues running and can be interrupted in Jupyter. Tool response waits time out after two minutes. Normal draft autosaving, explicit publication, and discard semantics still apply.
 
 ## Live document tests
 
@@ -70,19 +70,21 @@ Chat renders GitHub-flavored Markdown tables in horizontally scrollable containe
 
 [[frontend/src/useNotebookHistory.ts#useNotebookHistory]] loads the notebook conversation and saves it after each completed or stopped turn. History survives publishing, discarding edits, reconnecting, and reopening the editor.
 
-History loading disables only chat controls, not sidebar navigation. Active assistant work and pending history writes still block navigation to preserve the conversation.
+Selecting a notebook starts with the chat panel closed. Its first successful history load opens the panel when saved messages exist; an empty conversation leaves it closed. Manual dismissal is respected for the rest of that visit.
+
+History loading disables only chat controls, not sidebar navigation. Mounted conversations continue streaming, executing tools, and saving history in the background. Three animated green sidebar dots indicate active assistant work; awaiting editing consent is not active work.
 
 [[backend/main.py#load_chat_history]] and [[backend/main.py#save_chat_history]] require the owner and same-origin requests. The UI saves history independently of the editor token so a viewing-to-editing handoff preserves the same conversation; legacy token-bearing calls still validate that token. Revision checks reject concurrent stale writes, and private history is excluded from public notebook metadata and exports. Storage uses the existing one-megabyte and 160-message limits. New chat clears the saved conversation; it does not change notebook content.
 
 [[backend/chat.py#history_messages]] marks unfinished tools as interrupted when storing them. Rehydration does not submit model requests or replay tools; the next user message begins a fresh turn. The prompt treats previous results as historical because notebook edits may have been discarded and kernel memory may have changed.
 
-Navigation and editor exit wait for pending history saves. Save failures remain visible with a retry action; conflicts offer reloading the saved chat instead of overwriting it. Completed turns are durable; forcibly closing the browser mid-reply can lose the unfinished turn. Authentication permissions are not cached with conversations.
+Editor exit waits for pending history saves; navigation does not interrupt them. Save failures remain visible with a retry action; conflicts offer reloading the saved chat instead of overwriting it. Completed turns are durable; forcibly closing the browser mid-reply can lose the unfinished turn. Authentication permissions are not cached with conversations.
 
 ## Persistent history tests
 
 API regressions verify history survives draft discard and editor replacement, interrupted tools become inert history, stale revisions and tokens fail, New chat clears history, and public or unauthorized requests cannot read it.
 
-Browser checks cover restoration without model/tool replay, completed-turn persistence, save failure/retry, and clearing persisted history.
+Browser checks cover automatic opening of saved conversations, manual dismissal, background tool execution against the original iframe and token, restoration without replay, completed-turn persistence, save failure/retry, and clearing persisted history.
 
 
 ## Notebook renaming
