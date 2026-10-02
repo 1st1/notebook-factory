@@ -71,7 +71,7 @@ async def start(source: str, report=lambda kind, message: None):
                 [
                     "-c",
                     '(command -v uv || python3 -m pip install "uv>=0.8,<1") && '
-                    'uv venv --seed --python 3.13 .venv && uv pip install --python .venv/bin/python "jupyterlab==4.4.10" "pysqlite3-binary==0.5.4.post2"',
+                    'uv venv --seed --python 3.13 .venv && uv pip install --python .venv/bin/python "jupyterlab==4.4.10" "pysqlite3-binary==0.5.4.post2" "fonttools>=4.60,<5"',
                 ],
                 stdout=output,
                 stderr=output,

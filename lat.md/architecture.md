@@ -35,7 +35,7 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 | `editor` | Nullable JSON containing Sandbox name, editor URL, and capability token |
 | `claim`, `claim_until` | Atomic operation lease shared across function instances |
 
-[[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. Initialization also adds the nullable published HTML column to existing tables. This targeted upgrade is not a general migration framework. The engine uses NullPool rather than retaining connections in a function-local pool.
+[[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. Initialization also adds the nullable published HTML column to existing tables. This targeted upgrade is not a general migration framework. Postgres retains up to two idle connections with three overflow connections, pre-ping checks, and five-minute recycling to avoid repeating connection setup on every request. SQLite tests use NullPool. Application shutdown disposes the pool.
 
 [[backend/config.py]] normalizes conventional Postgres URLs for asyncpg, maps `sslmode` to `ssl`, and removes libpq's `channel_binding` option. Deployment startup rejects missing or non-Postgres database configuration.
 
@@ -102,3 +102,9 @@ Notebook and chat panels share compact, aligned headers; chat actions are groupe
 The breadcrumb toolbar is omitted. A standalone mobile navigation button opens the sidebar on narrow screens.
 
 Published and editor iframes scroll internally rather than imposing minimum heights on the page. The sidebar notebook list scrolls independently with overscroll disabled; sidebar branding and account controls stay fixed. Setup output has a bounded scroll area. Compact spacing preserves notebook space on short landscape screens.
+
+## Workspace startup
+
+The public notebook list renders independently of authentication. A five-minute, tab-local metadata cache lets return visits show the published notebook immediately while fresh metadata loads.
+
+[[frontend/src/main.tsx#cachedNotebooks]] stores only the public list and published render URLs in session storage. Auth and edit permissions are never cached. Fresh list responses replace cached entries and reconcile selection; unavailable storage falls back to normal loading. [[backend/db.py]] reuses bounded Postgres connections for warm requests.

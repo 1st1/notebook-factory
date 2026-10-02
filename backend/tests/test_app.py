@@ -533,3 +533,11 @@ def test_deployment_replaces_editor_without_losing_saved_draft(client, monkeypat
     assert "Recovered draft" in start.call_args.args[0]
     stop.assert_awaited_once_with(first)
     assert client.post(f"/api/notebooks/{id}/save", json={"token": "old"}).status_code == 409
+
+
+# @lat: [[chat#Chat Markdown and model label]]
+def test_current_chat_model_tracks_configuration(client, monkeypatch):
+    monkeypatch.delenv("AI_MODEL", raising=False)
+    assert client.get("/api/auth/me").json()["chat_model"] == "gateway:openai/gpt-6-luna"
+    monkeypatch.setenv("AI_MODEL", "gateway:anthropic/claude-sonnet-4.6")
+    assert client.get("/api/auth/me").json()["chat_model"] == "gateway:anthropic/claude-sonnet-4.6"

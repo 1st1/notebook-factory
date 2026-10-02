@@ -29,3 +29,7 @@ if DATABASE_URL.startswith(("postgres://", "postgresql://")):
 if PRODUCTION and not DATABASE_URL.startswith("postgresql+asyncpg://"):
     raise RuntimeError("Use a durable Postgres DATABASE_URL on Vercel")
 MAX_BYTES = 10 * 1024 * 1024
+
+
+def chat_model():
+    return os.getenv("AI_MODEL", "gateway:openai/gpt-6-luna")

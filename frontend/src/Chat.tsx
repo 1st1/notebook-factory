@@ -6,10 +6,13 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { ToolActivity } from "./ToolActivity";
 import { Send, Square, X, RotateCcw, LoaderCircle } from "lucide-react";
 
 export function Chat({
   notebookId,
+  model,
   editor,
   frame,
   open,
@@ -18,6 +21,7 @@ export function Chat({
   disabled,
 }: {
   notebookId: string;
+  model?: string;
   editor: { url: string; token: string };
   frame: RefObject<HTMLIFrameElement | null>;
   open: boolean;
@@ -199,6 +203,7 @@ export function Chat({
         </button>
         </span>
       </header>
+      {model && <div className="chat-model" title={model}>Model: {model.replace(/^gateway:/, "")}</div>}
       <div className="chat-messages" aria-live="polite">
         {!messages.length && (
           <p className="chat-hint">
@@ -211,29 +216,22 @@ export function Chat({
             <small>{message.role === "user" ? "You" : "Assistant"}</small>
             {message.parts.map((part, index) =>
               part.type === "text" ? (
-                <Markdown key={index}>{part.text}</Markdown>
+                <Markdown remarkPlugins={[remarkGfm]} components={{ table: ({ children }) => <div className="chat-table"><table>{children}</table></div> }} key={index}>{part.text}</Markdown>
               ) : part.type === "reasoning" ? (
                 <details className="chat-reasoning" key={index} open={part.state === "streaming"}>
                   <summary>{part.state === "streaming" ? "Thinking…" : "Thoughts"}</summary>
-                  <Markdown>{part.text}</Markdown>
+                  <Markdown remarkPlugins={[remarkGfm]} components={{ table: ({ children }) => <div className="chat-table"><table>{children}</table></div> }}>{part.text}</Markdown>
                 </details>
               ) : part.type.startsWith("tool-") ||
                 part.type === "dynamic-tool" ? (
-                <div className="chat-tool" key={index}>
-                  {"toolName" in part
-                    ? String(part.toolName)
-                    : part.type.slice(5)}{" "}
-                  ·{" "}
-                  {"state" in part
-                    ? String(part.state).replaceAll("-", " ")
-                    : ""}
-                  {"output" in part &&
-                  part.output &&
-                  typeof part.output === "object" &&
-                  "error" in part.output ? (
-                    <p className="chat-error">{String(part.output.error)}</p>
-                  ) : null}
-                </div>
+                <ToolActivity
+                  key={index}
+                  name={"toolName" in part ? String(part.toolName) : part.type.slice(5)}
+                  state={"state" in part ? String(part.state) : ""}
+                  input={"input" in part ? part.input : undefined}
+                  output={"output" in part ? part.output : undefined}
+                  errorText={"errorText" in part && typeof part.errorText === "string" ? part.errorText : undefined}
+                />
               ) : null,
             )}
           </div>

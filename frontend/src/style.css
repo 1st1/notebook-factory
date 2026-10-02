@@ -736,3 +736,19 @@ main > .error > button { flex-shrink: 0; }
 
 .chat-reasoning { margin: 8px 0; padding-left: 10px; border-left: 2px solid #d5dccd; color: #79836f; font-size: 12px; }
 .chat-reasoning summary { cursor: pointer; user-select: none; }
+
+.chat-tool > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; min-width: 0; }
+.chat-tool > summary small { margin-left: auto; color: #8a9282; font-size: 10px; }
+.chat-tool > summary::before { content: "▸"; }
+.chat-tool[open] > summary::before { content: "▾"; }
+.chat-tool-caption { font-size: 10px; color: #8a9282; margin: 8px 0 4px; }
+.chat-tool .chat-tool-code { max-height: 260px; max-width: 100%; overflow: auto; overscroll-behavior: contain; white-space: pre-wrap; overflow-wrap: anywhere; background: #f0f2eb; border-radius: 5px; padding: 8px; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #343c30; }
+.chat-tool-result { margin-top: 8px; }
+.chat-tool-result > summary { cursor: pointer; }
+
+.chat-model { padding: 7px 16px; border-bottom: 1px solid #e8ebe2; color: #79836f; font-size: 10px; overflow-wrap: anywhere; }
+.chat-table { max-width: 100%; overflow-x: auto; overscroll-behavior: contain; margin: 12px 0; }
+.chat-table table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.chat-table th, .chat-table td { border: 1px solid #dde1d5; padding: 6px 8px; text-align: left; min-width: 90px; }
+.chat-table th { background: #eef1e8; font-weight: 600; }
+.chat-table tr:nth-child(even) { background: #f5f6f0; }

@@ -29,6 +29,7 @@ type Auth = {
   user: { login: string } | null;
   can_edit: boolean;
   configured: boolean;
+  chat_model?: string;
 };
 type Editor = { name: string; url: string; token: string };
 async function api<T>(path: string, body?: unknown): Promise<T> {
@@ -119,17 +120,29 @@ function PublishedNotebook({ notebook, version }: { notebook: Notebook; version:
   />;
 }
 
+const WORKSPACE_CACHE = "notebook-factory:public-workspace:v1";
+function cachedNotebooks(): Notebook[] | null {
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(WORKSPACE_CACHE) || "null");
+    if (cached && Date.now() - cached.saved < 300000 && Array.isArray(cached.notebooks) &&
+      cached.notebooks.every((n: Notebook) => typeof n.id === "string" && typeof n.title === "string"))
+      return cached.notebooks;
+  } catch { /* Storage can be unavailable. */ }
+  return null;
+}
+
 function App() {
   const [auth, setAuth] = useState<Auth>({
     user: null,
     can_edit: false,
     configured: false,
   });
-  const [notebooks, setNotebooks] = useState<Notebook[]>([]);
+  const [cached] = useState(cachedNotebooks);
+  const [notebooks, setNotebooks] = useState<Notebook[]>(cached || []);
   const [selected, setSelected] = useState<string | null>(
-    new URLSearchParams(location.search).get("notebook"),
+    new URLSearchParams(location.search).get("notebook") || cached?.[0]?.id || null,
   );
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(cached === null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [setupStage, setSetupStage] = useState("");
@@ -161,15 +174,17 @@ function App() {
   const notebook = notebooks.find((n) => n.id === selected);
 
   const refresh = useCallback(async () => {
-    const [list, identity] = await Promise.all([
-      api<Notebook[]>("/notebooks"),
-      api<Auth>("/auth/me"),
+    await Promise.all([
+      api<Notebook[]>("/notebooks").then(list => {
+        setNotebooks(list);
+        setLoading(false);
+        setSelected(current => list.some(n => n.id === current) ? current : list[0]?.id || null);
+        try {
+          sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: list }));
+        } catch { /* Rendering must not depend on browser storage. */ }
+      }),
+      api<Auth>("/auth/me").then(setAuth),
     ]);
-    setNotebooks(list);
-    setAuth(identity);
-    setSelected((current) =>
-      list.some((n) => n.id === current) ? current : list[0]?.id || null,
-    );
   }, []);
   useEffect(() => {
     refresh()
@@ -569,7 +584,7 @@ function App() {
                 />
               )}
             </div>
-            {editor && <Suspense fallback={null}><Chat key={editor.token} notebookId={selected!} editor={editor} frame={frame} disabled={!!busy || closing} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy}/></Suspense>}
+            {editor && <Suspense fallback={null}><Chat model={auth.chat_model} key={editor.token} notebookId={selected!} editor={editor} frame={frame} disabled={!!busy || closing} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy}/></Suspense>}
             </div>
           </>
         ) : (

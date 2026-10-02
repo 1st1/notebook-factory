@@ -26,7 +26,7 @@ The production alias is public. Unique deployment URLs have Vercel deployment pr
 
 | Variable | Purpose |
 | --- | --- |
-| `AI_MODEL` | Optional chat model; defaults to gateway:anthropic/claude-sonnet-4.6 |
+| `AI_MODEL` | Optional chat model; defaults to gateway:openai/gpt-6-luna |
 | `AI_GATEWAY_API_KEY` | Optional AI Gateway key; deployments use Vercel OIDC by default |
 | `APP_URL` | Canonical app origin; production uses `https://notebook-factory-green.vercel.app` |
 | `BLOB_READ_WRITE_TOKEN` | Backend upload credential for the public rendered-notebook Blob store |

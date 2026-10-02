@@ -6,7 +6,14 @@ from sqlalchemy.pool import NullPool
 
 from config import DATABASE_URL
 
-engine = create_async_engine(DATABASE_URL, poolclass=NullPool)
+engine = create_async_engine(
+    DATABASE_URL,
+    **(
+        {"pool_size": 2, "max_overflow": 3, "pool_pre_ping": True, "pool_recycle": 300}
+        if DATABASE_URL.startswith("postgresql+")
+        else {"poolclass": NullPool}
+    ),
+)
 metadata = MetaData()
 notebooks = Table(
     "notebooks",

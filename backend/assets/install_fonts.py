@@ -4,6 +4,9 @@ import hashlib
 from pathlib import Path
 from urllib.request import urlopen
 
+from fontTools.ttLib import TTFont
+from fontTools.varLib.instancer import instantiateVariableFont
+
 COMMIT = "9710da1eacb3be272583c3224dcb70f9da6eadbb"
 FONTS = [
     ("notoemoji", "NotoEmoji", "de6c18832938afc99caf132b39d6a30a19bac7f2e812e28db2535b4608d27551"),
@@ -29,7 +32,18 @@ def install():
             path.write_bytes(data)
         with urlopen(f"{base}/OFL.txt", timeout=20) as response:
             (folder / f"{filename}-OFL.txt").write_bytes(response.read())
-        print(f"Installed {filename}", flush=True)
+        # Matplotlib/FreeType may expose only a variable font's default weight.
+        # Install static regular and bold faces so weight matching is unambiguous.
+        for weight, style in [(400, "Regular"), (700, "Bold")]:
+            target = folder / f"{filename}-{style}.ttf"
+            with TTFont(path) as variable:
+                font = instantiateVariableFont(
+                    variable, {"wght": weight}, inplace=False, updateFontNames=True
+                )
+                font.save(target)
+                font.close()
+        path.unlink()
+        print(f"Installed {filename} regular and bold", flush=True)
     config = Path.home() / ".config/matplotlib"
     config.mkdir(parents=True, exist_ok=True)
     (config / "matplotlibrc").write_text(

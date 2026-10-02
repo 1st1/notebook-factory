@@ -8,7 +8,7 @@ The editor's Chat button opens a right sidebar where the assistant can read, edi
 
 [[backend/chat.py]] streams through Vercel AI Gateway with five browser-executed notebook tools. The model never receives Sandbox credentials or a general server-side execution tool.
 
-The default model is Claude Sonnet 4.6, configurable with AI_MODEL. Medium reasoning effort enables provider reasoning output; the UI streams it in an expandable Thoughts section, open while streaming and collapsed afterward. A spinner accompanies waiting and tool-execution status. Deployment uses Vercel OIDC; local development can load VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY. Gateway access and credits are required. A free-tier model rejection displays an explicit instruction to add paid Gateway credits. Notebook sources and text outputs are sent to the model when it reads the document.
+The default model is GPT-6 Luna, configurable with AI_MODEL. The chat header displays the model ID returned by the server, using the same configuration as inference. Medium reasoning effort requests reasoning; provider-visible reasoning is optional, and the UI streams it in an expandable Thoughts section, open while streaming and collapsed afterward. A spinner accompanies waiting and tool-execution status. Deployment uses Vercel OIDC; local development can load VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY. Gateway access and credits are required. A free-tier model rejection displays an explicit instruction to add paid Gateway credits. Notebook sources and text outputs are sent to the model when it reads the document.
 
 The Python 0.8 UI adapter dispatches completed client tool inputs through an empty ToolCallResult event. Continuations preserve the existing assistant UI message ID to prevent duplicated tool history. Empty argument strings are normalized to JSON objects. Requests have a 1 MB history limit and 160-message limit; the browser bounds automatic work to 24 tool calls per user message. The prompt makes that budget explicit and defaults open-ended demonstrations to one focused example with a few cells and one result; multiple examples require an explicit request.
 
@@ -53,3 +53,15 @@ Chat checks the embedded bridge protocol before invoking tools. Older or unrespo
 Unknown tools are rejected before cell lookup. Source conflicts return the current cell ID and bounded source so the assistant can adapt its operation; missing cells require a fresh read. The prompt requires using new source after replacements and skipping unavailable scrolling. Three consecutive tool failures pause automatic continuation. The exact-source guard remains in place to protect newer edits and prevent execution of unexpected code.
 
 An authenticated handshake regression runs before document readiness; document tests cover stale source recovery, missing cells, and unknown tool rejection.
+
+## Tool argument streaming
+
+[[frontend/src/ToolActivity.tsx#ToolActivity]] shows partial tool arguments as the model generates them, including a growing cell-source preview. Completed operations collapse into expandable input and result details.
+
+Tool cards distinguish argument generation from execution and errors. Code previews scroll within a bounded area; result previews are capped at 12 KB. The Python SDK forwards argument deltas immediately, while execution still waits for complete arguments. A protocol regression verifies deltas arrive before completion and dispatch; browser checks verify code appears before a cell tool executes. Execution output is displayed when the tool finishes, not streamed from the kernel.
+
+## Chat Markdown and model label
+
+Chat renders GitHub-flavored Markdown tables in horizontally scrollable containers. The server reports the configured model ID, which is displayed below the chat toolbar.
+
+[[backend/config.py#chat_model]] supplies both inference and [[backend/auth.py#me]] so environment overrides cannot leave a hardcoded model label behind. A regression verifies both the default and override values. Browser checks cover table headers, cells, and narrow-panel overflow.

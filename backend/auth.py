@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
-from config import APP_URL, SECRET
+from config import APP_URL, SECRET, chat_model
 
 router = APIRouter(prefix="/api/auth")
 signer = URLSafeTimedSerializer(SECRET)
@@ -49,6 +49,7 @@ async def me(request: Request):
     current = user(request)
     return {
         "user": current,
+        "chat_model": chat_model(),
         "can_edit": bool(current and current.get("login", "").lower() == "1st1"),
         "configured": bool(os.getenv("GITHUB_CLIENT_ID") and os.getenv("GITHUB_CLIENT_SECRET")),
     }

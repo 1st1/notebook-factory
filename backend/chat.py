@@ -2,10 +2,11 @@
 
 import json
 import logging
-import os
 
 import ai
 from pydantic import BaseModel, Field
+
+from config import chat_model
 
 log = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ Changes are private drafts; only the user can Save & exit to publish or Exit to 
 
 async def stream(messages, message_id=None):
     try:
-        model = ai.get_model(os.getenv("AI_MODEL", "gateway:anthropic/claude-sonnet-4.6"))
+        model = ai.get_model(chat_model())
         async with ai.stream(
             model,
             [ai.system_message(SYSTEM), *messages],
