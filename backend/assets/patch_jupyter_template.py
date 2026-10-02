@@ -1,11 +1,12 @@
-import sys
-import pysqlite3
+from importlib.util import find_spec
 from pathlib import Path
 
-sys.modules["sqlite3"] = pysqlite3
-import jupyterlab
-
-source_path = Path(jupyterlab.__file__).parent / "static" / "index.html"
+# This is a top-level package: finding its spec does not execute __init__.py.
+spec = find_spec("jupyterlab")
+if spec is None or not spec.submodule_search_locations:
+    raise RuntimeError("JupyterLab is not installed or is not a package")
+package_dir = Path(next(iter(spec.submodule_search_locations)))
+source_path = package_dir / "static" / "index.html"
 source = source_path.read_text()
 if "jupyter-config-data" not in source or "main." not in source:
     raise RuntimeError("The installed JupyterLab index is missing its application bundle")

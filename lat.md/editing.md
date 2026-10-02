@@ -133,3 +133,10 @@ The bridge exports complete unsaved cells and outputs without awaiting Jupyter r
 ## Expired Sandbox persistence tests
 
 An owner can save and publish a browser document after Sandbox failure. Invalid documents and stale tokens are rejected; drafts remain private and cleanup or keepalive failure cannot undo persistence.
+
+
+## Template discovery tests
+
+The template patcher locates the top-level JupyterLab package without executing its initializer, avoiding a heavyweight import during editor setup.
+
+[[backend/assets/patch_jupyter_template.py]] uses importlib spec discovery to find the static HTML template. The regression supplies a package whose initializer raises and verifies CSS and bridge injection succeed without importing it.
