@@ -169,7 +169,7 @@ function App() {
   const editorsRef = useRef(editors);
   const editor = selected ? editors[selected] ?? null : null;
   const [chatPanel, setChatPanel] = useState<{ id: string | null; open: boolean }>({ id: null, open: false });
-  const chatOpen = chatPanel.id === selected && chatPanel.open;
+  const chatOpen = chatPanel.id === selected ? chatPanel.open : true;
   const setChatOpen = (open: boolean) => setChatPanel({ id: selected, open });
   const [chatStates, setChatStates] = useState<Record<string, { busy: boolean; working: boolean }>>({});
   const chatBusy = !!selected && !!chatStates[selected]?.busy;
@@ -185,14 +185,12 @@ function App() {
   selectedRef.current = selected;
   const recoveries = useRef(new Set<string>());
   const savingEditors = useRef(new Map<string, Promise<void>>());
+  const saveAgain = useRef(new Set<string>());
   const closingTokens = useRef(new Set<string>());
   const frames = useRef(new Map<string, HTMLIFrameElement>());
   const [saved, setSaved] = useState("");
   const [mobile, setMobile] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
-  const saving = useRef<AbortController | null>(null);
-  const closingRef = useRef(false);
-  const saveEpoch = useRef(0);
   const activeEditor = editor?.connected ? editor : null;
   const editorReady = !!activeEditor?.ready;
   const notebook = notebooks.find((n) => n.id === selected);
@@ -210,8 +208,9 @@ function App() {
     if (current?.token === token) putEditor(id, { ...current, ...patch });
   }
 
-  const showSavedChat = useCallback((id: string, hasHistory: boolean) => {
-    if (selectedRef.current === id && hasHistory) setChatPanel({ id, open: true });
+  const saveAfterTurn = useCallback((id: string) => {
+    const current = editorsRef.current[id];
+    if (current) void saveEditor(current).catch(() => setError("Notebook could not be saved. Autosave will retry."));
   }, []);
 
   const renameNotebook = useCallback((id: string, title: string) => {
@@ -291,64 +290,28 @@ function App() {
     });
   }, []);
 
-  const persist = useCallback(
-    async (publish = false, close = false) => {
-      if (!editor || !selected || editor.notebookId !== selected) return;
-      if (closingRef.current || (!close && saving.current)) return;
-      if (close) {
-        closingRef.current = true;
-        closingTokens.current.add(editor.token);
-        saveEpoch.current++;
-        saving.current?.abort();
-        saving.current = null;
-      }
-      const controller = new AbortController();
-      if (!close) saving.current = controller;
-      const epoch = saveEpoch.current;
-      try {
-        const source = await saveBridge(editor);
-        if (epoch !== saveEpoch.current) return;
-        // Keep the live document mounted until durable persistence succeeds.
-        await api(`/notebooks/${selected}/${close ? "close" : "save"}`, {
-          token: editor.token,
-          source,
-          publish,
-        }, controller.signal);
-        if (epoch !== saveEpoch.current) return;
-        setSaved(
-          "Draft saved at " +
-            new Date().toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-        );
-        if (publish) {
-          setRenderVersion((v) => v + 1);
-          void refresh().catch((e) => setError(e.message));
-        }
-        if (close) {
-          putEditor(selected, null);
-          setSaved("");
-        }
-      } catch (error) {
-        // A close/discard supersedes any older autosave, including its stale-token error.
-        if (epoch === saveEpoch.current) throw error;
-      } finally {
-        if (close) { closingRef.current = false; closingTokens.current.delete(editor.token); }
-        else if (saving.current === controller) saving.current = null;
-      }
-    },
-    [editor, selected, saveBridge, refresh],
-  );
-
   function saveEditor(current: LiveEditor): Promise<void> {
     if (!current.ready || closingTokens.current.has(current.token)) return Promise.resolve();
     const existing = savingEditors.current.get(current.token);
-    if (existing) return existing;
+    if (existing) { saveAgain.current.add(current.token); return existing; }
     const work = (async () => {
-      const source = await saveBridge(current);
-      if (closingTokens.current.has(current.token) || editorsRef.current[current.notebookId]?.token !== current.token) return;
-      await api(`/notebooks/${current.notebookId}/save`, { token: current.token, source }, AbortSignal.timeout(15000));
+      do {
+        saveAgain.current.delete(current.token);
+        const source = await saveBridge(current);
+        if (closingTokens.current.has(current.token) || editorsRef.current[current.notebookId]?.token !== current.token) return;
+        const result = await api<{ changed: boolean; render_url?: string | null; revision: number; updated_at: number }>(
+          `/notebooks/${current.notebookId}/save`, { token: current.token, source, publish: true }, AbortSignal.timeout(60000),
+        );
+        if (result.changed) {
+          setNotebooks(items => {
+            const updated = items.map(item => item.id === current.notebookId ? { ...item, render_url: result.render_url, revision: result.revision, updated_at: result.updated_at } : item);
+            try { sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: updated })); } catch { /* Storage is optional. */ }
+            return updated;
+          });
+          if (selectedRef.current === current.notebookId) setRenderVersion(value => value + 1);
+        }
+        if (selectedRef.current === current.notebookId) setSaved("Saved at " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      } while (saveAgain.current.has(current.token));
     })().catch(error => {
       if (closingTokens.current.has(current.token) || editorsRef.current[current.notebookId]?.token !== current.token) return;
       throw error;
@@ -469,16 +432,20 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    const saveAll = () => {
       for (const current of Object.values(editorsRef.current)) {
-        void saveEditor(current).catch(() => setError("A notebook draft could not be saved. Keep this tab open; autosave will retry."));
+        void saveEditor(current).catch(() => setError("A notebook could not be saved. Keep this tab open; autosave will retry."));
       }
-    }, 30000);
+    };
+    const interval = setInterval(saveAll, 30000);
+    const hidden = () => { if (document.visibilityState === "hidden") saveAll(); };
+    document.addEventListener("visibilitychange", hidden);
+    window.addEventListener("blur", saveAll);
     const unload = (event: BeforeUnloadEvent) => {
       if (Object.keys(editorsRef.current).length) event.preventDefault();
     };
     window.addEventListener("beforeunload", unload);
-    return () => { clearInterval(interval); window.removeEventListener("beforeunload", unload); };
+    return () => { clearInterval(interval); window.removeEventListener("beforeunload", unload); document.removeEventListener("visibilitychange", hidden); window.removeEventListener("blur", saveAll); };
   }, []);
 
   async function action(label: string, operation: () => Promise<void>) {
@@ -493,8 +460,8 @@ function App() {
     }
   }
   function choose(id: string | null) {
-    if (closingRef.current || id === selected) return;
-    setChatPanel({ id, open: false });
+    if (id === selected) return;
+    setChatPanel({ id, open: true });
     if (editor?.ready) void saveEditor(editor).catch(() => setError("A notebook draft could not be saved. Keep this tab open; autosave will retry."));
     selectedRef.current = id;
     setSelected(id); setMobile(false); setError(""); setSaved("");
@@ -686,15 +653,11 @@ function App() {
                     ><Trash2 size={16} strokeWidth={1.5} /></button>
                   )}
                   {auth.can_edit && <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(!chatOpen)}><MessageSquare size={16}/>Chat</button>}
-                  {auth.can_edit && (!activeEditor ? (
+                  {auth.can_edit && !activeEditor && (
                     <button className="button primary" disabled={!!busy || setupStarted !== null} onClick={() => { void openEditor(selected!).catch(e => setError(e.message)); }}>
                       <Pencil size={15} /> Edit notebook
                     </button>
-                  ) : (
-                    <button className="button primary" disabled={!!busy || chatBusy || !editorReady} onClick={() => action("Saving and closing…", () => persist(true, true))}>
-                      <ArrowUpRight size={16} /> Save &amp; exit
-                    </button>
-                  ))}
+                  )}
                 </div>
               </div>
               <div className="metadata">
@@ -780,7 +743,7 @@ function App() {
                 </span>
                 <span>
                   {activeEditor ? (
-                    "Changes are private until published"
+                    "Changes save automatically"
                   ) : (
                     <>
                       <Check size={13} /> Published
@@ -801,11 +764,11 @@ function App() {
               />}
             </div>
             {auth.can_edit && chatIds.map(id => <Suspense key={id} fallback={null}><Chat
-              model={auth.chat_model} notebookId={id} selected={selected === id} editorStarting={startingIds.has(id)}
+              model={auth.chat_model} notebookId={id} editorStarting={startingIds.has(id)}
               editor={editors[id]?.connected ? editors[id] : null}
               getFrame={() => { const current = editorsRef.current[id]; return current ? frames.current.get(current.token) ?? null : null; }}
               disabled={selected === id && !!busy} open={selected === id && chatOpen}
-              onClose={() => setChatPanel({ id, open: false })} onHistoryLoaded={showSavedChat}
+              onClose={() => setChatPanel({ id, open: false })} onTurnFinished={saveAfterTurn}
               onBusy={reportChatBusy} onRename={renameNotebook} onEnterEditing={() => openEditor(id)}
             /></Suspense>)}
             </div>

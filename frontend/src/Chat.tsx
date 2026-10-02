@@ -15,11 +15,10 @@ export function Chat({
   model,
   editor,
   getFrame,
-  selected,
   editorStarting,
   open,
   onClose,
-  onHistoryLoaded,
+  onTurnFinished,
   onBusy,
   onRename,
   onEnterEditing,
@@ -30,12 +29,11 @@ export function Chat({
   editor: { url: string; token: string } | null;
   onEnterEditing: () => Promise<void>;
   getFrame: () => HTMLIFrameElement | null;
-  selected: boolean;
   editorStarting: boolean;
   open: boolean;
   disabled: boolean;
   onClose: () => void;
-  onHistoryLoaded: (notebookId: string, hasHistory: boolean) => void;
+  onTurnFinished: (notebookId: string) => void;
   onBusy: (notebookId: string, busy: boolean, working: boolean) => void;
   onRename: (id: string, title: string) => void;
 }) {
@@ -234,13 +232,11 @@ export function Chat({
   });
   const busy = status === "submitted" || status === "streaming" || pending > 0;
   const history = useNotebookHistory(notebookId, null, messages, setMessages, busy);
-  const historyReported = useRef(false);
+  const wasBusy = useRef(false);
   useEffect(() => {
-    if (!selected) { historyReported.current = false; return; }
-    if (!history.loaded || historyReported.current) return;
-    historyReported.current = true;
-    onHistoryLoaded(notebookId, messages.length > 0);
-  }, [selected, history.loaded, messages.length, notebookId, onHistoryLoaded]);
+    if (wasBusy.current && !busy) onTurnFinished(notebookId);
+    wasBusy.current = busy;
+  }, [busy, notebookId, onTurnFinished]);
   useEffect(() => {
     onBusy(notebookId, busy || history.persistenceBlocking, busy && !consent);
   }, [busy, consent, history.persistenceBlocking, notebookId, onBusy]);
@@ -294,7 +290,7 @@ export function Chat({
       </header>
       {model && <div className="chat-model" title={model}>Model: {model.replace(/^gateway:/, "")}</div>}
       <div className="chat-messages" aria-live="polite">
-        {history.loading && <p className="chat-hint">Loading conversation…</p>}
+        {history.loading && <p className="chat-hint chat-status" role="status"><LoaderCircle size={14} className="spin" aria-hidden="true" />Loading conversation…</p>}
         {history.saving && <p className="chat-hint">Saving conversation…</p>}
         {history.error && <div role="alert" className="chat-error">
           <p>{history.loaded ? "Chat history is not saved. " : ""}{history.error}</p>
@@ -302,7 +298,7 @@ export function Chat({
         </div>}
         {history.loaded && !messages.length && (
           <p className="chat-hint">
-            {editor ? "Ask me to fix a bug, explain a cell, or plot a chart. Changes stay in your draft." : "Ask about this notebook. I can read its published cells and outputs without starting an editor."}
+            {editor ? "Ask me to fix a bug, explain a cell, or plot a chart. Changes save and publish automatically." : "Ask about this notebook. I can read its published cells and outputs without starting an editor."}
           </p>
         )}
         {messages.map((message) => (

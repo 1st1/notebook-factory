@@ -122,7 +122,7 @@ Each publication gets a unique URL with a long cache lifetime. Metadata includes
 
 The database retains rendered HTML as a fallback. Without Blob credentials, local development uses the original render endpoint. A failed CDN fetch falls back to that endpoint. Existing rows upload their stored HTML once when the render endpoint is visited, guarded by publication revision. Upload failure prevents switching the published database record.
 
-Previously published Blob URLs remain public; this implementation does not garbage-collect old versions or uploads left behind by failed database commits. The Blob store contains only documents submitted for publication, never ordinary autosaved drafts.
+Previously published Blob URLs remain public; this implementation does not garbage-collect old versions or uploads left behind by failed database commits. Automatic browser saves publish changed documents to Blob; unchanged content does not create new artifacts. Source persistence precedes rendering and uploading so a Blob failure does not lose edits.
 
 ## Prepared font assets
 

@@ -327,7 +327,10 @@ async def editor_status(id: str, body: EditorRequest):
 @app.post("/api/notebooks/{id}/save", dependencies=[Depends(require_owner)])
 async def save(id: str, body: EditorRequest, background_tasks: BackgroundTasks):
     _, current = await checked_editor(id, body.token)
-    result = await save_draft(id, body)
+    # Persist the live document even if rendering or Blob is temporarily unavailable.
+    if body.publish:
+        await save_draft(id, body.model_copy(update={"publish": False}))
+    result = await save_draft(id, body, require_saved_source=body.publish)
     background_tasks.add_task(keep_editor_alive, current)
     return result
 
@@ -339,16 +342,19 @@ async def keep_editor_alive(current):
         log.info("Sandbox unavailable after durable draft save", exc_info=True)
 
 
-async def save_draft(id: str, body: EditorRequest, *, closing=False):
+async def save_draft(id: str, body: EditorRequest, *, closing=False, require_saved_source=False):
     row, current = await checked_editor(id, body.token)
     source = body.source
     if source is None:
         raise HTTPException(422, "Export the live notebook document before saving.")
     validate(source)
+    if require_saved_source and row["source"] != source:
+        raise HTTPException(409, "Notebook changed while publishing; autosave will retry.")
     values = {"source": source}
     if closing:
         values["editor"] = None
-    if body.publish:
+    changed = body.publish and (json.loads(source) != json.loads(row["published"]) or not row["published_html"])
+    if changed:
         html = await anyio.to_thread.run_sync(render, source)
         values.update(
             published=source,
@@ -360,12 +366,22 @@ async def save_draft(id: str, body: EditorRequest, *, closing=False):
     async with engine.begin() as conn:
         result = await conn.execute(
             update(notebooks)
-            .where(notebooks.c.id == id, notebooks.c.editor == row["editor"])
+            .where(
+                notebooks.c.id == id,
+                notebooks.c.editor == row["editor"],
+                notebooks.c.source == row["source"],
+                notebooks.c.revision == row["revision"],
+            )
             .values(**values)
         )
         if result.rowcount != 1:
             raise HTTPException(409, "Editor changed while saving; retry")
-    return {"saved_at": timestamp(), "published": body.publish}
+    return {
+        "saved_at": timestamp(), "published": body.publish, "changed": bool(changed),
+        "render_url": values.get("render_url", row["render_url"]),
+        "revision": row["revision"] + int(bool(changed)),
+        "updated_at": values.get("updated_at", row["updated_at"]),
+    }
 
 
 @app.post("/api/notebooks/{id}/close", dependencies=[Depends(require_owner)])
@@ -468,9 +484,13 @@ async def notebook_chat(id: str, request: Request):
 
 
 @app.post("/api/notebooks/{id}/chat-history", dependencies=[Depends(require_owner)])
-async def load_chat_history(id: str, body: chat.ChatRequestToken):
+async def load_chat_history(id: str, body: chat.HistoryLoadRequest):
     row = (await checked_editor(id, body.token))[0] if body.token else await get_notebook(id)
-    return {"messages": json.loads(row["chat_history"] or "[]"), "revision": row["chat_revision"]}
+    messages = json.loads(row["chat_history"] or "[]")
+    if body.limit is not None:
+        offset = max(0, len(messages) - body.limit)
+        return {"messages": messages[offset:], "revision": row["chat_revision"], "offset": offset}
+    return {"messages": messages, "revision": row["chat_revision"]}
 
 
 @app.put("/api/notebooks/{id}/chat-history", dependencies=[Depends(require_owner)])
@@ -483,7 +503,10 @@ async def save_chat_history(id: str, request: Request):
     except ValueError:
         raise HTTPException(422, "Invalid chat history") from None
     row = (await checked_editor(id, body.token))[0] if body.token else await get_notebook(id)
-    history = json.dumps(chat.history_messages(body.messages))
+    previous = json.loads(row["chat_history"] or "[]")
+    if body.offset > len(previous):
+        raise HTTPException(409, "Chat changed. Reload saved chat before continuing.")
+    history = json.dumps(previous[:body.offset] + chat.history_messages(body.messages))
     if len(history.encode()) > 1_000_000:
         raise HTTPException(413, "Chat history is too large. Start a new chat.")
     async with engine.begin() as conn:

@@ -10,6 +10,7 @@ export function useNotebookHistory(notebookId: string, token: string | null, mes
   const [reloadRequired, setReloadRequired] = useState(false);
   const [reload, setReload] = useState(0);
   const revision = useRef(0);
+  const offset = useRef(0);
   const inFlight = useRef(false);
   const active = useRef(true);
   const serialized = useMemo(() => JSON.stringify(messages), [messages]);
@@ -24,12 +25,13 @@ export function useNotebookHistory(notebookId: string, token: string | null, mes
     setError("");
     fetch(endpoint, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }), signal: controller.signal,
+      body: JSON.stringify({ token, limit: 50 }), signal: controller.signal,
     }).then(async response => {
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "Could not load chat history.");
       if (controller.signal.aborted) return;
       revision.current = body.revision;
+      offset.current = body.offset ?? 0;
       setSaved(JSON.stringify(body.messages));
       setMessages(body.messages);
       setLoaded(true);
@@ -47,16 +49,17 @@ export function useNotebookHistory(notebookId: string, token: string | null, mes
     inFlight.current = true;
     setSaving(true);
     const snapshot = serialized;
+    const snapshotOffset = messages.length ? offset.current : 0;
     fetch(endpoint, {
       method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, revision: revision.current, messages: JSON.parse(snapshot) }),
+      body: JSON.stringify({ token, revision: revision.current, offset: snapshotOffset, messages: JSON.parse(snapshot) }),
     }).then(async response => {
       const body = await response.json();
       if (!response.ok) {
         if (response.status === 409 && active.current) setReloadRequired(true);
         throw new Error(body.detail || "Could not save chat history.");
       }
-      if (active.current) { revision.current = body.revision; setSaved(snapshot); }
+      if (active.current) { revision.current = body.revision; offset.current = snapshotOffset; setSaved(snapshot); }
     }).catch(error => {
       if (active.current) setError(error.message);
     }).finally(() => {

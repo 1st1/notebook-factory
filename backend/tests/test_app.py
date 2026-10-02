@@ -766,3 +766,68 @@ def test_navigation_close_can_retry_lost_acknowledgement(client, monkeypatch):
     assert client.post(f"/api/notebooks/{id}/close", json=body).status_code == 200
     assert client.post(f"/api/notebooks/{id}/close", json={**body, "source": new_notebook("Different draft")}).status_code == 409
     assert "Navigation draft" in client.portal.call(main.get_notebook, id)["source"]
+
+
+def test_recent_chat_history_preserves_older_messages(client):
+    id = create(client)
+    path = f"/api/notebooks/{id}/chat-history"
+    messages = [
+        {"id": f"u{i}", "role": "user", "parts": [{"type": "text", "text": str(i)}]}
+        for i in range(60)
+    ]
+    assert client.put(path, json={"revision": 0, "messages": messages}).status_code == 200
+    recent = client.post(path, json={"limit": 50}).json()
+    assert recent["offset"] == 10
+    assert [m["id"] for m in recent["messages"]] == [m["id"] for m in messages[10:]]
+    added = {"id": "new", "role": "user", "parts": [{"type": "text", "text": "Continue"}]}
+    body = {"revision": 1, "offset": 10, "messages": recent["messages"] + [added]}
+    assert client.put(path, json=body).status_code == 200
+    assert client.put(path, json=body).status_code == 409
+    restored = client.post(path, json={}).json()
+    assert len(restored["messages"]) == 61
+    assert [m["id"] for m in restored["messages"][:10]] == [m["id"] for m in messages[:10]]
+    assert client.put(path, json={"revision": 2, "messages": []}).status_code == 200
+    assert client.post(path, json={"limit": 50}).json()["messages"] == []
+
+
+def test_autopublish_skips_unchanged_documents_and_retries_blob(client, monkeypatch):
+    import json
+
+    id = create(client)
+    session = {"name": "auto", "token": "auto", "url": "https://example.test"}
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value=session))
+    client.post(f"/api/notebooks/{id}/editor")
+    upload = AsyncMock(return_value="https://blob.test/rendered.html")
+    monkeypatch.setattr(main.publication, "upload", upload)
+    original = client.portal.call(main.get_notebook, id)
+    unchanged = client.post(f"/api/notebooks/{id}/save", json={
+        "token": "auto", "publish": True,
+        "source": json.dumps(json.loads(original["published"]), indent=3),
+    })
+    assert unchanged.status_code == 200
+    assert unchanged.json()["changed"] is False
+    upload.assert_not_awaited()
+
+    source = new_notebook("Automatically published")
+    body = {"token": "auto", "publish": True, "source": source}
+    result = client.post(f"/api/notebooks/{id}/save", json=body)
+    assert result.status_code == 200
+    assert result.json()["changed"] is True
+    assert result.json()["render_url"] == "https://blob.test/rendered.html"
+    assert result.json()["revision"] == original["revision"] + 1
+    row = client.portal.call(main.get_notebook, id)
+    assert row["published"] == row["source"] == source
+    assert row["editor"]
+    assert client.post(f"/api/notebooks/{id}/save", json=body).json()["changed"] is False
+    assert upload.await_count == 1
+
+    newer = new_notebook("Saved despite failed upload")
+    upload.side_effect = RuntimeError("Blob unavailable")
+    with pytest.raises(RuntimeError, match="Blob unavailable"):
+        client.post(f"/api/notebooks/{id}/save", json={**body, "source": newer})
+    row = client.portal.call(main.get_notebook, id)
+    assert row["source"] == newer
+    assert row["published"] == source
+    upload.side_effect = None
+    assert client.post(f"/api/notebooks/{id}/save", json={**body, "source": newer}).json()["changed"]
+    assert client.portal.call(main.get_notebook, id)["published"] == newer

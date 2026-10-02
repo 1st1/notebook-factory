@@ -15,6 +15,10 @@ class ChatRequestToken(BaseModel):
     token: str | None = Field(default=None, max_length=256)
 
 
+class HistoryLoadRequest(ChatRequestToken):
+    limit: int | None = Field(default=None, ge=1, le=50)
+
+
 class ChatRequest(BaseModel):
     token: str | None = Field(default=None, max_length=256)
     messages: list[ai.ui.ai_sdk.UIMessage] = Field(min_length=1, max_length=160)
@@ -23,6 +27,7 @@ class ChatRequest(BaseModel):
 class HistoryRequest(BaseModel):
     token: str | None = Field(default=None, max_length=256)
     revision: int = Field(ge=0)
+    offset: int = Field(default=0, ge=0)
     messages: list[ai.ui.ai_sdk.UIMessage] = Field(max_length=160)
 
 
