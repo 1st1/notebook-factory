@@ -99,4 +99,12 @@ A regression changes deployment generations, verifies same-deployment reuse, fai
 
 New Sandboxes install Noto Emoji and Noto Sans JP alongside Matplotlib's default DejaVu Sans fallback, covering emoji and Japanese chart labels without hiding missing-glyph warnings.
 
-[[backend/assets/install_fonts.py#install]] downloads OFL-licensed fonts from a pinned Google Fonts revision, verifies SHA-256 checksums, retains licenses, creates static regular and bold faces with fontTools, and configures Matplotlib before the kernel starts. Static faces avoid variable-font weight lookup warnings. Emoji are monochrome. The assistant preserves the fallback list when styling plots. A live Sandbox draw verified slot-machine and chart emoji, wave dash, and Japanese text with missing-glyph warnings treated as errors. Existing environments require reconnecting after deployment; existing plot outputs must be rerun.
+[[scripts/prepare_fonts.py#prepare]] builds static regular and bold faces once from pinned, checksum-verified Google Fonts sources, retains OFL licenses, and publishes an immutable ZIP to Blob. The committed [font manifest](../backend/assets/fonts.json) pins its URL and SHA-256 digest.
+
+[[backend/assets/install_fonts.py#install]] only downloads, verifies, and unpacks that bundle before configuring Matplotlib. Sandboxes no longer install fontTools or convert variable fonts. Setup logs report download/install duration. Existing environments require reconnecting after deployment; existing plot outputs must be rerun.
+
+## Font bundle verification
+
+Installer tests cover verified extraction, removal of legacy variable faces, Matplotlib configuration, corrupt downloads, and unexpected archive paths. Untrusted or incomplete bundles fail before installing fonts.
+
+Live Sandbox checks render normal and bold emoji/Japanese labels, rejecting both missing-glyph and font-weight lookup warnings.

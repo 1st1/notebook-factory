@@ -71,7 +71,7 @@ async def start(source: str, report=lambda kind, message: None):
                 [
                     "-c",
                     '(command -v uv || python3 -m pip install "uv>=0.8,<1") && '
-                    'uv venv --seed --python 3.13 .venv && uv pip install --python .venv/bin/python "jupyterlab==4.4.10" "pysqlite3-binary==0.5.4.post2" "fonttools>=4.60,<5"',
+                    'uv venv --seed --python 3.13 .venv && uv pip install --python .venv/bin/python "jupyterlab==4.4.10" "pysqlite3-binary==0.5.4.post2"',
                 ],
                 stdout=output,
                 stderr=output,
@@ -83,12 +83,15 @@ async def start(source: str, report=lambda kind, message: None):
             await instance.fs.write_text(
                 ".install-notebook-fonts.py", (ASSETS / "install_fonts.py").read_text()
             )
+            await instance.fs.write_text(
+                ".notebook-fonts.json", (ASSETS / "fonts.json").read_text()
+            )
             fonts = await instance.run_process(
                 ".venv/bin/python",
-                [".install-notebook-fonts.py"],
+                [".install-notebook-fonts.py", ".notebook-fonts.json"],
                 stdout=output,
                 stderr=output,
-                kill_after=140,
+                kill_after=60,
             )
             if fonts.returncode:
                 raise RuntimeError("Notebook font installation failed")

@@ -85,7 +85,7 @@ Run from the repository root, retaining the existing project link:
 ```sh
 npx vercel@62.1.0 link
 npx vercel@62.1.0 env ls production
-npx vercel@62.1.0 deploy --prod --yes
+sh scripts/deploy.sh --prod --yes
 ```
 
 Linking is only needed on an unlinked checkout. Set or connect required environment variables before deploying. Use the root as the Vercel project directory, not the frontend or backend subdirectory. Dependency lockfiles and bundled templates must be included in the deployment.
@@ -123,3 +123,9 @@ Each publication gets a unique URL with a long cache lifetime. Metadata includes
 The database retains rendered HTML as a fallback. Without Blob credentials, local development uses the original render endpoint. A failed CDN fetch falls back to that endpoint. Existing rows upload their stored HTML once when the render endpoint is visited, guarded by publication revision. Upload failure prevents switching the published database record.
 
 Previously published Blob URLs remain public; this implementation does not garbage-collect old versions or uploads left behind by failed database commits. The Blob store contains only documents submitted for publication, never ordinary autosaved drafts.
+
+## Prepared font assets
+
+[scripts/deploy.sh](../scripts/deploy.sh) runs [[scripts/prepare_fonts.py#prepare]] before the Vercel deploy. Unchanged recipes reuse the committed immutable Blob manifest without rebuilding or requiring Blob credentials locally.
+
+When changing the preparation script, run `uv run scripts/prepare_fonts.py` with BLOB_READ_WRITE_TOKEN set, or pass `--env-file` pointing to a private environment file. Commit the resulting [manifest](../backend/assets/fonts.json) alongside the script. The builder pins fontTools and upstream font checksums; the recipe hash invalidates prepared assets when its source changes. Git-based deployments use the committed manifest directly. Blob credentials remain outside the Sandbox, which only receives a public asset URL and checksum.
