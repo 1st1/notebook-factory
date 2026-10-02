@@ -586,9 +586,6 @@ function App() {
               </button>)}{!matches.length && <p className="list-empty">{mine ? "Create your first notebook." : "No notebooks yet."}</p>}</div>}
             </section>;
           })}
-          {!loading && !notebooks.length && (
-            <p className="list-empty">A little space for your next big idea.</p>
-          )}
           {query &&
             !notebooks.some((n) =>
               n.title.toLowerCase().includes(query.toLowerCase()),
