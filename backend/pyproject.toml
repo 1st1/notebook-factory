@@ -1,0 +1,24 @@
+[project]
+name = "notebook-factory-api"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "httpx>=0.28,<1",
+  "itsdangerous>=2.2,<3", "sqlalchemy[asyncio]>=2.0,<3",
+  "asyncpg>=0.30,<1", "aiosqlite>=0.21,<1", "nbformat>=5.10,<6",
+  "nbconvert>=7.16,<8", "vercel-sandbox>=0.6,<0.7", "python-dotenv>=1,<2"
+]
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.12"]
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = [".vercel"]
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+[tool.ruff.lint.per-file-ignores]
+"assets/*.py" = ["E402", "I001"]
+"tests/test_app.py" = ["E402"]

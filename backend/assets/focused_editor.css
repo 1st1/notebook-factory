@@ -1,0 +1,10 @@
+  #main:not([data-vercel-focused-editor="true"]) #jp-header-panel,
+  #main:not([data-vercel-focused-editor="true"]) #jp-menu-panel,
+  #main:not([data-vercel-focused-editor="true"]) #jp-top-panel,
+  #main:not([data-vercel-focused-editor="true"]) #jp-bottom-panel,
+  #main:not([data-vercel-focused-editor="true"]) #jp-down-stack,
+  #main:not([data-vercel-focused-editor="true"]) #jp-left-stack,
+  #main:not([data-vercel-focused-editor="true"]) #jp-right-stack,
+  #main:not([data-vercel-focused-editor="true"]) .jp-SideBar {
+    visibility: hidden !important;
+  }
