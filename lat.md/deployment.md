@@ -109,7 +109,7 @@ npx vercel@62.1.0 logs --environment production --since 10m --limit 100 --json
 | Setup stops or errors | Live stage/output, OIDC/Sandbox access, install deadline, Jupyter readiness logs |
 | Editor operation returns 409 | Another operation owns the lease or the editor token is stale |
 | Editor returns 410 | Sandbox expired/unavailable; reopen from the last durable draft |
-| Close feels slow | Notebook save and database persistence precede success; Sandbox shutdown runs afterward |
+| Close feels slow | Browser export, rendering/Blob publication, and database persistence precede Save & exit; kernel cleanup runs afterward |
 
 Jupyter output is redirected to `.jupyter.log` inside the Sandbox. Startup failures retain a bounded excerpt and redact the capability token there. General SDK HTTP logs can still contain sensitive capability URLs; redact them before sharing. Do not restart or stop an active user Sandbox merely to inspect it.
 

@@ -262,20 +262,12 @@ async def provision_editor(id, claim, report=None):
         if row["editor"]:
             old = json.loads(row["editor"])
             try:
-                source = await editor.read(old)
-                validate(source)
+                await editor.check_available(old)
                 if old.get("generation") == generation:
                     return old
                 if report:
                     report("progress", "Updating the environment for this deployment…")
-                # Back up the most recent Jupyter-saved draft before replacement.
-                async with engine.begin() as conn:
-                    await conn.execute(
-                        update(notebooks)
-                        .where(notebooks.c.id == id, notebooks.c.claim == claim)
-                        .values(source=source)
-                    )
-                row["source"] = source
+                # Postgres is authoritative; the Sandbox file may never have been saved.
                 retired = old
             except HTTPException as error:
                 if error.status_code != 410:
@@ -327,12 +319,10 @@ async def checked_editor(id, token):
 
 @app.post("/api/notebooks/{id}/save", dependencies=[Depends(require_owner)])
 async def save(id: str, body: EditorRequest, background_tasks: BackgroundTasks):
-    async with editor_lease(id):
-        result = await save_draft(id, body)
-        if body.source is not None:
-            _, current = await checked_editor(id, body.token)
-            background_tasks.add_task(keep_editor_alive, current)
-        return result
+    _, current = await checked_editor(id, body.token)
+    result = await save_draft(id, body)
+    background_tasks.add_task(keep_editor_alive, current)
+    return result
 
 
 async def keep_editor_alive(current):
@@ -346,9 +336,11 @@ async def save_draft(id: str, body: EditorRequest, *, closing=False):
     row, current = await checked_editor(id, body.token)
     source = body.source
     if source is None:
-        source = await editor.read(current, extend=False) if closing else await editor.read(current)
+        raise HTTPException(422, "Export the live notebook document before saving.")
     validate(source)
     values = {"source": source}
+    if closing:
+        values["editor"] = None
     if body.publish:
         html = await anyio.to_thread.run_sync(render, source)
         values.update(
@@ -375,12 +367,6 @@ async def close(id: str, body: EditorRequest, background_tasks: BackgroundTasks)
         row, current = await checked_editor(id, body.token)
         # Saving first means a failed persistence operation never destroys the draft.
         await save_draft(id, body, closing=True)
-        async with engine.begin() as conn:
-            await conn.execute(
-                update(notebooks)
-                .where(notebooks.c.id == id, notebooks.c.editor == row["editor"])
-                .values(editor=None)
-            )
         background_tasks.add_task(stop_closed_editor, current)
         return {"closed": True}
 

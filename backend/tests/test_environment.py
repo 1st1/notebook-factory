@@ -56,6 +56,7 @@ async def test_editor_restores_dependencies_and_injects_current_document(monkeyp
         ".venv/bin/python",
         [".patch-jupyter-template.py"],
     )
+    batch.write_text.assert_any_call(".jupyter/lab/user-settings/@jupyterlab/docmanager-extension/plugin.jupyterlab-settings", '{"autosave": false, "autosaveInterval": 5}')
     assert instance.run_process.await_count == 2  # No dependency or font installation.
     assert result["base_url"].startswith("https://sandbox.test/")
 

@@ -16,7 +16,9 @@ from render import new_notebook
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    monkeypatch.setattr(main.editor, "check_available", AsyncMock())
+    monkeypatch.setattr(main.editor, "keep_alive", AsyncMock())
     with TestClient(main.app) as client:
         yield client
 
@@ -80,17 +82,17 @@ def test_drafts_publish_close_and_reopen(client, monkeypatch):
     assert client.post(f"/api/notebooks/{id}/editor", json={}).json() == first
     assert client.post(f"/api/notebooks/{id}/editor", json={}).json() == first
     assert start.await_count == 1
-    assert client.post(f"/api/notebooks/{id}/save", json={"token": "stale"}).status_code == 409
-    assert client.post(f"/api/notebooks/{id}/save", json={"token": "secret"}).status_code == 200
+    assert client.post(f"/api/notebooks/{id}/save", json={"source": new_notebook("Unpublished changes"), "token": "stale"}).status_code == 409
+    assert client.post(f"/api/notebooks/{id}/save", json={"source": new_notebook("Unpublished changes"), "token": "secret"}).status_code == 200
     assert "Unpublished changes" not in client.get(f"/api/notebooks/{id}/download").text
     assert (
         client.post(
-            f"/api/notebooks/{id}/save", json={"token": "secret", "publish": True}
+            f"/api/notebooks/{id}/save", json={"source": new_notebook("Unpublished changes"), "token": "secret", "publish": True}
         ).status_code
         == 200
     )
     assert "Unpublished changes" in client.get(f"/api/notebooks/{id}/download").text
-    assert client.post(f"/api/notebooks/{id}/close", json={"token": "secret"}).status_code == 200
+    assert client.post(f"/api/notebooks/{id}/close", json={"source": new_notebook("Unpublished changes"), "token": "secret"}).status_code == 200
     stop.assert_awaited_once()
     assert client.post(f"/api/notebooks/{id}/editor", json={}).status_code == 200
     assert "Unpublished changes" in start.call_args.args[0]
@@ -141,7 +143,7 @@ def test_expired_editor_restores_draft(client, monkeypatch):
     )
     client.post(f"/api/notebooks/{id}/editor", json={})
     monkeypatch.setattr(
-        main.editor, "read", AsyncMock(side_effect=main.HTTPException(410, "Expired"))
+        main.editor, "check_available", AsyncMock(side_effect=main.HTTPException(410, "Expired"))
     )
     start = AsyncMock(return_value={"name": "new", "token": "new", "url": "https://example.test"})
     monkeypatch.setattr(main.editor, "start", start)
@@ -282,8 +284,8 @@ def test_close_detaches_before_background_shutdown(client, monkeypatch):
         raise RuntimeError("Shutdown unavailable")
 
     monkeypatch.setattr(main.editor, "stop", stop)
-    assert client.post(f"/api/notebooks/{id}/close", json={"token": "t"}).json() == {"closed": True}
-    main.editor.read.assert_awaited_once_with(result, extend=False)
+    assert client.post(f"/api/notebooks/{id}/close", json={"source": new_notebook("Durable draft"), "token": "t"}).json() == {"closed": True}
+    main.editor.read.assert_not_awaited()
 
 
 def test_render_uses_stored_html_and_backfills_legacy_rows(client, monkeypatch):
@@ -320,10 +322,10 @@ def test_publish_updates_html_atomically_and_drafts_leave_it_unchanged(client, m
         main.editor, "read", AsyncMock(return_value=new_notebook("New public content"))
     )
     client.post(f"/api/notebooks/{id}/editor")
-    assert client.post(f"/api/notebooks/{id}/save", json={"token": "t"}).status_code == 200
+    assert client.post(f"/api/notebooks/{id}/save", json={"source": new_notebook("New public content"), "token": "t"}).status_code == 200
     assert client.get(f"/api/notebooks/{id}/render").text == initial
     assert (
-        client.post(f"/api/notebooks/{id}/save", json={"token": "t", "publish": True}).status_code
+        client.post(f"/api/notebooks/{id}/save", json={"source": new_notebook("New public content"), "token": "t", "publish": True}).status_code
         == 200
     )
     published = client.get(f"/api/notebooks/{id}/render").text
@@ -338,7 +340,7 @@ def test_publish_updates_html_atomically_and_drafts_leave_it_unchanged(client, m
         main.editor, "read", AsyncMock(return_value=new_notebook("Must not publish"))
     )
     with pytest.raises(RuntimeError, match="Conversion failed"):
-        client.post(f"/api/notebooks/{id}/save", json={"token": "t", "publish": True})
+        client.post(f"/api/notebooks/{id}/save", json={"source": new_notebook("New public content"), "token": "t", "publish": True})
     assert client.get(f"/api/notebooks/{id}/render").text == published
     assert "Must not publish" not in client.get(f"/api/notebooks/{id}/download").text
     assert client.portal.call(main.get_notebook, id)["revision"] == revision
@@ -407,7 +409,7 @@ def test_discard_restores_published_draft_without_reading_jupyter(client, monkey
     )
     monkeypatch.setattr(main.editor, "stop", AsyncMock())
     client.post(f"/api/notebooks/{id}/editor")
-    client.post(f"/api/notebooks/{id}/save", json={"token": "t"})
+    client.post(f"/api/notebooks/{id}/save", json={"source": new_notebook("Discard this draft"), "token": "t"})
     main.editor.read.reset_mock()
     assert client.post(f"/api/notebooks/{id}/discard", json={"token": "wrong"}).status_code == 409
     response = client.post(f"/api/notebooks/{id}/discard", json={"token": "t"})
@@ -430,7 +432,7 @@ def test_save_and_exit_publishes_html_and_closes(client, monkeypatch):
     monkeypatch.setattr(main.editor, "stop", AsyncMock())
     client.post(f"/api/notebooks/{id}/editor")
     assert (
-        client.post(f"/api/notebooks/{id}/close", json={"token": "t", "publish": True}).status_code
+        client.post(f"/api/notebooks/{id}/close", json={"source": new_notebook("Saved and closed"), "token": "t", "publish": True}).status_code
         == 200
     )
     row = client.portal.call(main.get_notebook, id)
@@ -449,11 +451,11 @@ def test_blob_publication_and_failed_upload_preserve_previous_version(client, mo
     monkeypatch.setattr(main.editor, "start", AsyncMock(return_value=session))
     monkeypatch.setattr(main.editor, "read", AsyncMock(return_value=new_notebook("Private draft")))
     client.post(f"/api/notebooks/{id}/editor")
-    client.post(f"/api/notebooks/{id}/save", json={"token": "t"})
+    client.post(f"/api/notebooks/{id}/save", json={"source": new_notebook("Private draft"), "token": "t"})
     assert upload.await_count == 1
     upload.side_effect = RuntimeError("Blob upload failed")
     with pytest.raises(RuntimeError, match="Blob upload failed"):
-        client.post(f"/api/notebooks/{id}/save", json={"token": "t", "publish": True})
+        client.post(f"/api/notebooks/{id}/save", json={"source": new_notebook("Private draft"), "token": "t", "publish": True})
     row = client.portal.call(main.get_notebook, id)
     assert row["render_url"].endswith("/first.html") and row["revision"] == 1
     assert "Private draft" not in row["published"]
@@ -512,7 +514,7 @@ def test_deployment_replaces_editor_without_losing_saved_draft(client, monkeypat
     id = create(client)
     monkeypatch.setattr(main.editor, "generation", lambda: "deployment-a")
     start = AsyncMock(return_value={"name": "old", "token": "old", "url": "https://example.test"})
-    read = AsyncMock(return_value=new_notebook("Recovered draft"))
+    read = AsyncMock(return_value=new_notebook("Stale disk file"))
     stop = AsyncMock()
     monkeypatch.setattr(main.editor, "start", start)
     monkeypatch.setattr(main.editor, "read", read)
@@ -521,6 +523,7 @@ def test_deployment_replaces_editor_without_losing_saved_draft(client, monkeypat
     assert first["generation"] == "deployment-a"
     assert client.post(f"/api/notebooks/{id}/editor", json={}).json() == first
     assert start.await_count == 1
+    assert client.post(f"/api/notebooks/{id}/save", json={"token": "old", "source": new_notebook("Recovered draft")}).status_code == 200
     monkeypatch.setattr(main.editor, "generation", lambda: "deployment-b")
     start.side_effect = RuntimeError("Unavailable")
     assert client.post(f"/api/notebooks/{id}/editor", json={}).status_code == 502
@@ -532,6 +535,7 @@ def test_deployment_replaces_editor_without_losing_saved_draft(client, monkeypat
     start.side_effect = None
     start.return_value = {"name": "new", "token": "new", "url": "https://new.test"}
     result = client.post(f"/api/notebooks/{id}/editor", json={}).json()
+    read.assert_not_awaited()
     assert result["generation"] == "deployment-b"
     assert "Recovered draft" in start.call_args.args[0]
     stop.assert_awaited_once_with(first)
@@ -665,3 +669,48 @@ def test_rename_notebook_requires_current_editor_and_valid_title(client, monkeyp
     assert item["title"] == "Better title"
     assert item["revision"] == 1
     assert client.get(f"/api/notebooks/{id}/download").text == original
+
+
+# @lat: [[editing#Close autosave race tests]]
+@pytest.mark.parametrize("operation", ["close", "discard"])
+def test_late_autosave_cannot_overwrite_atomic_close(client, monkeypatch, operation):
+    import asyncio
+
+    from fastapi import BackgroundTasks
+
+    id = create(client)
+    initial = client.portal.call(main.get_notebook, id)["published"]
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value={"name": "race", "token": "t", "url": "https://example.test"}))
+    client.post(f"/api/notebooks/{id}/editor")
+    original = main.checked_editor
+
+    async def scenario():
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def checked(id, token):
+            result = await original(id, token)
+            if asyncio.current_task().get_name() == "late-save":
+                entered.set()
+                await release.wait()
+            return result
+
+        monkeypatch.setattr(main, "checked_editor", checked)
+        pending = asyncio.create_task(main.save_draft(id, main.EditorRequest(token="t", source=new_notebook("Old autosave"))), name="late-save")
+        await asyncio.wait_for(entered.wait(), 2)
+        try:
+            body = main.EditorRequest(token="t", source=new_notebook("Latest browser document"))
+            await asyncio.wait_for(getattr(main, operation)(id, body, BackgroundTasks()), 2)
+        finally:
+            release.set()
+        with pytest.raises(main.HTTPException) as error:
+            await pending
+        assert error.value.status_code == 409
+        row = await main.get_notebook(id)
+        assert row["editor"] is None
+        if operation == "close":
+            assert "Latest browser document" in row["source"]
+        else:
+            assert row["source"] == initial
+        assert "Old autosave" not in row["source"]
+
+    client.portal.call(scenario)

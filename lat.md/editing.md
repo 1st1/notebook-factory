@@ -51,9 +51,9 @@ The stream owns the provisioning task and cancels it on disconnect. Provisioning
 
 [[frontend/src/main.tsx]] exports the live browser document through the authenticated bridge before calling the backend. Export does not depend on a running Sandbox or completion of Jupyter save dialogs.
 
-A bridge response must arrive within 20 seconds. Every 30 seconds, the frontend saves a durable draft, skipping an autosave if another save/close is active. The backend validates the exported notebook and commits it to Postgres. Legacy callers without an exported document retain the server file-read path.
+A bridge response must arrive within 20 seconds. Every 30 seconds, the frontend saves a durable draft, skipping an autosave if another save/close is active. The backend validates the exported notebook and commits it to Postgres. Save and close require an exported document; calls without one are rejected rather than reading a stale Sandbox file.
 
-[[backend/editor.py#read]] bounds the HTTP read by the notebook size limit, checks session availability, and refreshes the shared runtime idle horizon. [[backend/main.py#save_draft]] stores the document and outputs; it never executes cells.
+[[backend/editor.py#check_available]] probes runtime availability without reading notebook files. App autosaves refresh the shared runtime idle horizon in the background. [[backend/main.py#save_draft]] stores the document and outputs; it never executes cells.
 
 Save & exit renders the saved document once and uploads the rendered HTML to Blob and atomically stores its source, fallback HTML, and Blob URL as the public version, increments the revision, updates publication time, and refreshes the rendered iframe. It closes the editor after publication. It does not run cells, deploy the application, or retain previous revisions.
 
@@ -61,7 +61,7 @@ Save & exit renders the saved document once and uploads the rendered HTML to Blo
 
 Exit discards the private draft, including autosaved changes, and restores the last published document through [[backend/main.py#discard]]. It skips Jupyter saving, detaches the session, and schedules shutdown. Save & exit publishes through the close endpoint.
 
-[[backend/main.py#close]] saves the draft and clears the current editor record before returning success. [[backend/main.py#stop_closed_editor]] retires only the detached Jupyter session and its document as a response background task. The VM and other kernels stay running.
+[[backend/main.py#close]] saves the exported draft and clears the current editor record in a single conditional database update before returning success. [[backend/main.py#stop_closed_editor]] retires only the detached Jupyter session and its document as a response background task. The VM and other kernels stay running.
 
 App autosaves and Save & exit export the full in-memory Jupyter model, including outputs, without invoking its server save or waiting on dialogs. The authenticated save endpoint validates the document and active session before persisting it. The iframe remains mounted until persistence succeeds. Sandbox keepalive is best effort after draft persistence and is skipped on close.
 
@@ -73,7 +73,7 @@ Notebook documents and their saved outputs persist in Postgres. Uploaded side fi
 
 ## Save serialization
 
-The bridge serializes all saves on each Jupyter document context, covering native autosave, toolbar saves, and parent requests. A save finishes its disk write and metadata refresh before the next save begins.
+Jupyter disk autosave is disabled. The bridge still serializes explicit Jupyter toolbar and legacy parent saves: each disk write and metadata refresh finishes before another starts. Application persistence exports memory and bypasses this queue.
 
 JupyterLab 4.4.10 can otherwise overlap these operations: a second save reads a new disk hash before the first save updates the context hash, producing a false File Changed dialog. This was reproduced with one page and no external writer in a disposable Sandbox.
 
@@ -97,9 +97,9 @@ Editor environments belong to the deployment that created them. Opening or recon
 
 [[backend/editor.py#generation]] uses Vercel's deployment ID (deployment URL fallback); local development hashes bundled editor assets, provisioning code, and Python dependency declarations. Legacy sessions without a generation are stale. This policy governs live editor reuse. The shared dependency drive contains no notebook, bridge, app origin, or editor token, so it can be reused while each deployment injects fresh app assets.
 
-[[backend/main.py#provision_editor]] recovers the old Sandbox's latest saved notebook into the database before provisioning its replacement. Recovery failures leave the old environment intact. After a successful database backup, it stops the old session before creating the replacement because a drive allows only one writer. If replacement startup fails, the durable draft and drive remain available for retry. Once replaced, old session tokens cannot save or publish. Unopened stale environments expire normally; the next open on a new deployment replaces the shared runtime, interrupting kernels still using the previous generation. Their browser documents remain exportable for recovery.
+[[backend/main.py#provision_editor]] checks runtime availability without reading its notebook file. A replacement always receives the Postgres draft, because manual disk saves can lag behind browser edits. Reconnect exports the current browser document first. Opening from another tab can recover only the last acknowledged database draft; it cannot recover unexported edits from a different browser.
 
-A regression changes deployment generations, verifies same-deployment reuse, failed-replacement recovery, unpublished draft preservation, successful replacement, and stale-token rejection. App reconnect preserves browser-only edits through direct export before replacing the environment; automatic deployment replacement without an attached browser can only preserve an already-saved draft.
+The next open on a new deployment replaces the shared runtime, interrupting kernels still using the previous generation. Their browser documents remain exportable for recovery. Regression coverage verifies same-deployment reuse, failed replacement, preservation of a database draft that differs from the Sandbox file, and stale-token rejection.
 
 ## Plot font fallback
 
@@ -156,3 +156,11 @@ A disposable live Sandbox check opens two browser tabs, verifies separate kernel
 ## Shared document bridge tests
 
 The bridge locates a nested session-specific notebook path and authenticates the per-editor token, rejecting the server capability as a bridge token.
+
+## Close autosave race tests
+
+Close and discard must finish while an older autosave is still in flight. A conditional write rejects the late save after the editing session has been atomically invalidated, preserving the final document or discarded state.
+
+[[frontend/src/main.tsx]] supersedes and aborts older app autosave requests when closing, ignores their late responses, and keeps the live document mounted until Save & exit succeeds. Aborting a fetch is not the correctness guarantee: [[backend/main.py#save_draft]] conditions its database write on the same active editor record. Close stores the final document and clears that record together. App autosaves do not acquire the editor-operation lease, so they cannot block close. Metadata refresh after publication runs without holding the editor open.
+
+Browser verification deliberately stalls an autosave and the post-publication metadata requests, then confirms both Exit and Save & exit leave editing mode. Rendering and Blob upload still precede publication acknowledgement.

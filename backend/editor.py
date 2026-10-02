@@ -85,7 +85,7 @@ async def _start_runtime(report=lambda kind, message: None):
                 files[target] = content
             settings = {
                 "docmanager-extension/plugin": {
-                    "autosave": True,
+                    "autosave": False,
                     "autosaveInterval": 5,
                 },
                 "application-extension/shell": {"startMode": "single"},
@@ -240,6 +240,13 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
             "path": path, "token": token,
             "url": current["base_url"] + "/doc/tree/" + quote(path, safe="/") + "?nf_editor_token=" + token,
         }
+
+
+async def check_available(editor):
+    async with session():
+        current = {**editor, "base_url": editor.get("base_url") or editor["url"].split("/doc/tree/", 1)[0]}
+        if not await _alive(current):
+            raise HTTPException(410, "Editor expired. Reopen the saved draft.")
 
 
 async def read(editor: dict, *, extend=True):

@@ -33,7 +33,7 @@ type Auth = {
   chat_model?: string;
 };
 type Editor = { name: string; url: string; token: string };
-async function api<T>(path: string, body?: unknown): Promise<T> {
+async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(
     "/api" + path,
     body === undefined
@@ -42,6 +42,7 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
+          signal,
         },
   );
   if (!response.ok) {
@@ -171,7 +172,9 @@ function App() {
   const [mobile, setMobile] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
   const frame = useRef<HTMLIFrameElement>(null);
-  const saving = useRef(false);
+  const saving = useRef<AbortController | null>(null);
+  const closingRef = useRef(false);
+  const saveEpoch = useRef(0);
   const notebook = notebooks.find((n) => n.id === selected);
 
   const renameNotebook = useCallback((id: string, title: string) => {
@@ -254,17 +257,26 @@ function App() {
   const persist = useCallback(
     async (publish = false, close = false) => {
       if (!editor || !selected) return;
-      while (saving.current)
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      saving.current = true;
+      if (closingRef.current || (!close && saving.current)) return;
+      if (close) {
+        closingRef.current = true;
+        saveEpoch.current++;
+        saving.current?.abort();
+        saving.current = null;
+      }
+      const controller = new AbortController();
+      if (!close) saving.current = controller;
+      const epoch = saveEpoch.current;
       try {
         const source = await saveBridge();
+        if (epoch !== saveEpoch.current) return;
         // Keep the live document mounted until durable persistence succeeds.
         await api(`/notebooks/${selected}/${close ? "close" : "save"}`, {
           token: editor.token,
           source,
           publish,
-        });
+        }, controller.signal);
+        if (epoch !== saveEpoch.current) return;
         setSaved(
           "Draft saved at " +
             new Date().toLocaleTimeString([], {
@@ -274,15 +286,18 @@ function App() {
         );
         if (publish) {
           setRenderVersion((v) => v + 1);
-          await refresh();
+          void refresh().catch((e) => setError(e.message));
         }
         if (close) {
           setEditor(null);
           setSaved("");
         }
+      } catch (error) {
+        // A close/discard supersedes any older autosave, including its stale-token error.
+        if (epoch === saveEpoch.current) throw error;
       } finally {
-        if (close) setClosing(false);
-        saving.current = false;
+        if (close) closingRef.current = false;
+        else if (saving.current === controller) saving.current = null;
       }
     },
     [editor, selected, saveBridge, refresh],
@@ -295,9 +310,11 @@ function App() {
 
   async function discardEditor() {
     if (!editor || !selected) return;
-    while (saving.current)
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    saving.current = true;
+    if (closingRef.current) return;
+    closingRef.current = true;
+    saveEpoch.current++;
+    saving.current?.abort();
+    saving.current = null;
     setClosing(true);
     try {
       await api(`/notebooks/${selected}/discard`, { token: editor.token });
@@ -305,14 +322,14 @@ function App() {
       setSaved("");
     } finally {
       setClosing(false);
-      saving.current = false;
+      closingRef.current = false;
     }
   }
 
   useEffect(() => {
     if (!editor) return;
     const interval = setInterval(() => {
-      if (saving.current) return;
+      if (saving.current || closingRef.current) return;
       persist().catch((e) => setError(e.message));
     }, 30000);
     const unload = (event: BeforeUnloadEvent) => {
