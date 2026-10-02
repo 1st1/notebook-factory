@@ -160,20 +160,27 @@ function App() {
   const [loading, setLoading] = useState(cached === null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  const [setupStage, setSetupStage] = useState("");
-  const [setupLog, setSetupLog] = useState("");
-  const [setupStarted, setSetupStarted] = useState<number | null>(null);
-  const [setupSeconds, setSetupSeconds] = useState(0);
+  type SetupProgress = { stage: string; log: string; started: number; finished?: number };
+  const [setups, setSetups] = useState<Record<string, SetupProgress>>({});
+  const setup = selected ? setups[selected] : undefined;
+  const setupStage = setup?.stage ?? "";
+  const setupLog = setup?.log ?? "";
+  const setupStarted = setup && !setup.finished ? setup.started : null;
+  const setupSeconds = setup ? Math.floor(((setup.finished ?? Date.now()) - setup.started) / 1000) : 0;
+  const [, tickSetup] = useState(0);
   const setupOutput = useRef<HTMLPreElement>(null);
   useEffect(() => {
     if (setupStarted === null) return;
-    const timer = setInterval(() => setSetupSeconds(Math.floor((Date.now() - setupStarted) / 1000)), 1000);
+    const timer = setInterval(() => tickSetup(value => value + 1), 1000);
     return () => clearInterval(timer);
   }, [setupStarted]);
   useEffect(() => {
     const output = setupOutput.current;
     if (output) output.scrollTop = output.scrollHeight;
-  }, [setupLog]);
+  }, [selected, setupLog]);
+  function updateSetup(id: string, update: (current: SetupProgress) => SetupProgress) {
+    setSetups(items => items[id] ? { ...items, [id]: update(items[id]) } : items);
+  }
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -346,8 +353,7 @@ function App() {
   }
 
   async function loadEditor(id: string) {
-    const visible = () => selectedRef.current === id;
-    if (visible()) { setSetupStage("Connecting…"); setSetupLog(""); setSetupSeconds(0); setSetupStarted(Date.now()); }
+    setSetups(items => ({ ...items, [id]: { stage: "Connecting…", log: "", started: Date.now() } }));
     const previous = editorsRef.current[id];
     try {
       if (previous?.ready) {
@@ -356,12 +362,11 @@ function App() {
         await api(`/notebooks/${id}/close`, { token: previous.token, source, publish: false });
       }
       const result = await startEditor(id, (kind, message) => {
-        if (!visible()) return;
-        if (kind === "progress") setSetupStage(message);
-        if (kind === "log") setSetupLog(log => (log + message).slice(-20000));
+        if (kind === "progress") updateSetup(id, current => ({ ...current, stage: message }));
+        if (kind === "log") updateSetup(id, current => ({ ...current, log: (current.log + message).slice(-20000) }));
       });
       putEditor(id, { ...result, notebookId: id, ready: false, connected: false });
-      if (visible()) setSetupStage("Loading notebook…");
+      updateSetup(id, current => ({ ...current, stage: "Loading notebook…" }));
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       await new Promise<void>((resolve, reject) => {
         const requestId = crypto.randomUUID();
@@ -371,7 +376,7 @@ function App() {
           if (event.source !== frames.current.get(result.token)?.contentWindow || event.origin !== origin || event.data?.id !== requestId) return;
           if (event.data.result?.ready && event.data.result?.connected !== false) {
             cleanup(); patchEditor(id, result.token, { ready: true, connected: true });
-            if (visible()) setSetupStage("");
+            updateSetup(id, current => ({ ...current, stage: "" }));
             resolve();
           }
         };
@@ -384,7 +389,7 @@ function App() {
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     } finally {
       if (previous) closingTokens.current.delete(previous.token);
-      if (visible()) setSetupStarted(null);
+      updateSetup(id, current => ({ ...current, finished: Date.now() }));
     }
   }
 
@@ -477,9 +482,6 @@ function App() {
     if (editor?.ready) void saveEditor(editor).catch(() => setError("A notebook draft could not be saved. Keep this tab open; autosave will retry."));
     selectedRef.current = id;
     setSelected(id); setMobile(false); setError(""); setSaved("");
-    const loadingEditor = !!id && startingEditors.current.has(id);
-    setSetupStage(loadingEditor ? "Loading notebook…" : "");
-    setSetupStarted(loadingEditor ? Date.now() : null);
   }
   const date = notebook
     ? new Date(notebook.updated_at * 1000).toLocaleDateString(undefined, {

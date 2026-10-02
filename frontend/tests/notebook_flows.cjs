@@ -13,7 +13,7 @@ const server=http.createServer(async(req,res)=>{
  if(u.pathname==='/api/notebooks')return res.end(JSON.stringify(notebooks));
  if(u.pathname==='/api/auth/me')return res.end(JSON.stringify({can_edit:true,user:{login:'1st1'},configured:true}));
  if(u.pathname.endsWith('/chat-history')){const v=histories.get(id)||{messages:[],revision:0};if(req.method==='PUT'){histories.set(id,{messages:body.messages,revision:body.revision+1});return res.end(JSON.stringify({revision:body.revision+1}));}if(holdHistory){historyWaiters.push(()=>res.end(JSON.stringify(v)));return;}return res.end(JSON.stringify(v));}
- if(u.pathname.endsWith('/editor')){starts.push(id);const send=()=>res.end('data: '+JSON.stringify({type:'ready',editor:{name:'test',token:id+'-'+starts.length,url:'http://127.0.0.1:5187/editor-frame?id='+id}})+'\n\n');if(holdStart){heldStart=send;return;}return send();}
+ if(u.pathname.endsWith('/editor')){starts.push(id);const send=()=>res.end('data: '+JSON.stringify({type:'ready',editor:{name:'test',token:id+'-'+starts.length,url:'http://127.0.0.1:5187/editor-frame?id='+id}})+'\n\n');if(holdStart){res.write('data: '+JSON.stringify({type:'progress',message:'Preparing test environment…'})+'\n\n');res.write('data: '+JSON.stringify({type:'log',message:'Retained setup log'})+'\n\n');heldStart=send;return;}return send();}
  if(u.pathname.endsWith('/editor-status')){res.statusCode=expiredIds.has(id)?410:200;return res.end('{}');}
  if(u.pathname.endsWith('/save')){saves.push({id,...body});return res.end('{}');}
  if(u.pathname.endsWith('/close')){closeSource=body.source;if(holdClose)return;return res.end('{}');}
@@ -71,7 +71,13 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  await page.waitForTimeout(400);assert(saves.some(save=>save.id==='one'&&JSON.parse(save.source).live==='unsaved document'));
  await aButton.click();await page.getByTitle('Jupyter editor: Notebook one').waitFor();assert.equal(await aFrame.locator('body').evaluate(()=>window.retainedValue),42);assert.equal(boots.one,1,'returning must not reload iframe');
  await bButton.click();holdStart=true;await page.getByRole('button',{name:'Edit notebook',exact:true}).click();await bButton.getByLabel('Editor starting').waitFor();
+ await page.getByText('Preparing test environment…',{exact:true}).waitFor();
+ await page.clock.fastForward(5000);
  await aButton.click();assert.equal(await bButton.getByLabel('Editor starting').count(),1,'startup indicator survives navigation');
+ await page.clock.fastForward(5000);await bButton.click();
+ await page.getByText('Preparing test environment…',{exact:true}).waitFor();await page.getByText('Retained setup log',{exact:true}).waitFor();
+ const elapsed=await page.getByRole('region',{name:'Environment setup'}).locator('small').textContent();assert(parseInt(elapsed)>=10,'elapsed startup time must survive navigation');
+ await aButton.click();
  for(let i=0;i<30&&!heldStart;i++)await tick();assert(heldStart);holdStart=false;heldStart();
  await bButton.getByLabel('Editor connected').waitFor();assert.equal(await bButton.getByLabel('Editor starting').count(),0);await bButton.click();await page.getByTitle('Jupyter editor: Notebook two').waitFor();assert.equal(starts.length,2);
  assert.equal(await aButton.getByLabel('Editor connected').count(),1);assert.equal(await bButton.getByLabel('Editor connected').count(),1);
