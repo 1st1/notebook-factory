@@ -670,66 +670,6 @@ function App() {
           </div>
         ) : notebook ? (
           <>
-            <section className="notebook-heading">
-              <div className="title-row">
-                <h1>{notebook.title}</h1>
-                <div className="actions">
-                  <a
-                    className="button download"
-                    aria-label="Download notebook"
-                    title="Download .ipynb"
-                    href={`/api/notebooks/${selected}/download`}
-                  >
-                    <Download size={16} />
-                  </a>
-                  {ownsNotebook && (
-                    <button
-                      className="button delete-notebook"
-                      aria-label="Delete notebook"
-                      title="Delete notebook"
-                      disabled={!!busy || chatBusy}
-                      onClick={() => {
-                        if (!window.confirm(`Delete “${notebook.title}”? This permanently deletes its published notebook, draft, and chat history.`)) return;
-                        void action("Deleting notebook…", async () => {
-                          await api(`/notebooks/${notebook.id}/delete`, {});
-                          putEditor(notebook.id, null);
-                          setSelected(null);
-                          setSaved("");
-                          setNotebooks(items => {
-                            const remaining = items.filter(item => item.id !== notebook.id);
-                            try { sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: remaining })); } catch { /* Storage is optional. */ }
-                            return remaining;
-                          });
-                          await refresh();
-                        });
-                      }}
-                    ><Trash2 size={16} strokeWidth={1.5} /></button>
-                  )}
-                  <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(!chatOpen)}><MessageSquare size={16}/>Chat</button>
-                  {notebook && !ownsNotebook && <button className="button primary" disabled={!!busy} onClick={() => {
-                    if (!auth.user) { location.assign("/api/auth/login"); return; }
-                    void action("Forking notebook…", async () => {
-                      const fork = await api<Notebook>(`/notebooks/${notebook.id}/fork`, {});
-                      await refresh(); setSelected(fork.id);
-                      setExpandedUsers(items => ({ ...items, [auth.user!.user_id]: true }));
-                    });
-                  }}><GitFork size={16} />Fork</button>}
-                  {ownsNotebook && !activeEditor && (
-                    <button className="button primary" disabled={!!busy || setupStarted !== null} onClick={() => { void openEditor(selected!).catch(e => setError(e.message)); }}>
-                      <Pencil size={15} /> Edit notebook
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="metadata">
-                Updated{" "}
-                {date}
-                <span>·</span>
-                {activeEditor
-                  ? saved || "Drafts autosave every 30 seconds"
-                  : `Revision ${notebook.revision}`}
-              </div>
-            </section>
             {busy && !setupStage && (
               <div className="progress" role="status">
                 <LoaderCircle size={16} className="spin" />
@@ -795,13 +735,61 @@ function App() {
         )}
             <div className="notebook-workspace" style={notebook ? undefined : { display: "none" }}>
             <div className={"notebook-surface " + (activeEditor ? "editing" : "")}>
-              <div className="surface-toolbar">
-                <span>
+              <header className="surface-toolbar notebook-toolbar">
+                <div className="notebook-panel-title" title={activeEditor ? saved || "Changes save automatically" : `Updated ${date} · Revision ${notebook?.revision}`}>
                   <span className={activeEditor ? "green-dot" : "gray-dot"} />
-                  {activeEditor ? "JUPYTER LAB" : "NOTEBOOK"}
-                </span>
-                {activeEditor && <span>Changes save automatically</span>}
-              </div>
+                  <h1>{notebook?.title}</h1>
+                </div>
+                {notebook && (
+                <div className="actions notebook-header-actions">
+                  <a
+                    className="button download"
+                    aria-label="Download notebook"
+                    title="Download .ipynb"
+                    href={`/api/notebooks/${selected}/download`}
+                  >
+                    <Download size={16} />
+                  </a>
+                  {ownsNotebook && (
+                    <button
+                      className="button delete-notebook"
+                      aria-label="Delete notebook"
+                      title="Delete notebook"
+                      disabled={!!busy || chatBusy}
+                      onClick={() => {
+                        if (!window.confirm(`Delete “${notebook.title}”? This permanently deletes its published notebook, draft, and chat history.`)) return;
+                        void action("Deleting notebook…", async () => {
+                          await api(`/notebooks/${notebook.id}/delete`, {});
+                          putEditor(notebook.id, null);
+                          setSelected(null);
+                          setSaved("");
+                          setNotebooks(items => {
+                            const remaining = items.filter(item => item.id !== notebook.id);
+                            try { sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: remaining })); } catch { /* Storage is optional. */ }
+                            return remaining;
+                          });
+                          await refresh();
+                        });
+                      }}
+                    ><Trash2 size={16} strokeWidth={1.5} /></button>
+                  )}
+                  <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(!chatOpen)}><MessageSquare size={16}/>Chat</button>
+                  {notebook && !ownsNotebook && <button className="button primary" disabled={!!busy} onClick={() => {
+                    if (!auth.user) { location.assign("/api/auth/login"); return; }
+                    void action("Forking notebook…", async () => {
+                      const fork = await api<Notebook>(`/notebooks/${notebook.id}/fork`, {});
+                      await refresh(); setSelected(fork.id);
+                      setExpandedUsers(items => ({ ...items, [auth.user!.user_id]: true }));
+                    });
+                  }}><GitFork size={16} />Fork</button>}
+                  {ownsNotebook && !activeEditor && (
+                    <button className="button primary" disabled={!!busy || setupStarted !== null} onClick={() => { void openEditor(selected!).catch(e => setError(e.message)); }}>
+                      <Pencil size={15} /> Edit notebook
+                    </button>
+                  )}
+                </div>
+                )}
+              </header>
               {Object.values(editors).map(current => <iframe
                 key={current.token} ref={node => {
                   if (node) frames.current.set(current.token, node); else frames.current.delete(current.token);

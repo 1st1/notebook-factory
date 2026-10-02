@@ -819,3 +819,18 @@ main > .error > button { flex-shrink: 0; }
 .owner-notebooks .notebook-link { padding-left: 12px; }
 .owner-toggle > svg, .notebook-link > svg { flex-shrink: 0; }
 .chat-readonly { border-top: 1px solid #dde1d5; padding: 14px 16px; font-size: 12px; color: #7b8573; }
+
+/* Notebook actions share the compact panel-header treatment used by chat. */
+main { padding-top: 16px; }
+.notebook-toolbar { gap: 12px; }
+.notebook-panel-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.notebook-panel-title h1 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notebook-panel-title > span { flex-shrink: 0; }
+.notebook-header-actions { margin-left: auto; gap: 6px; flex-shrink: 0; }
+.notebook-header-actions .button { height: 28px; padding: 0 8px; font-size: 11px; gap: 5px; }
+.notebook-header-actions .download, .notebook-header-actions .delete-notebook { width: 28px; padding: 0; }
+@media (max-width: 650px) {
+  .notebook-toolbar { height: auto; min-height: 40px; flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+  .notebook-panel-title { flex: 1 1 100%; }
+  main { padding-top: 48px; }
+}
