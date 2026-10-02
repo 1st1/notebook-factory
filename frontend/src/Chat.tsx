@@ -20,11 +20,13 @@ export function Chat({
   onClose,
   onBusy,
   onRename,
+  onEnterEditing,
   disabled,
 }: {
   notebookId: string;
   model?: string;
-  editor: { url: string; token: string };
+  editor: { url: string; token: string } | null;
+  onEnterEditing: () => Promise<void>;
   frame: RefObject<HTMLIFrameElement | null>;
   open: boolean;
   disabled: boolean;
@@ -32,6 +34,11 @@ export function Chat({
   onBusy: (busy: boolean) => void;
   onRename: (id: string, title: string) => void;
 }) {
+  const currentEditor = useRef(editor);
+  currentEditor.current = editor;
+  const [consent, setConsent] = useState<{ reason: string; resolve: (yes: boolean) => void } | null>(null);
+  const consentRef = useRef<typeof consent>(null);
+  consentRef.current = consent;
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(0);
   const active = useRef(true);
@@ -47,9 +54,9 @@ export function Chat({
     () =>
       new DefaultChatTransport({
         api: `/api/notebooks/${notebookId}/chat`,
-        body: { token: editor.token },
+        body: () => ({ token: currentEditor.current?.token ?? null }),
       }),
-    [notebookId, editor.token],
+    [notebookId],
   );
   const {
     messages,
@@ -79,6 +86,30 @@ export function Chat({
             throw new Error(
               "Tool limit reached. Send another message to continue.",
             );
+          if (toolCall.toolName === "request_editing") {
+            let accepted = !!currentEditor.current;
+            if (!accepted) accepted = await new Promise<boolean>(resolve => setConsent({ reason: String((toolCall.input as { reason?: string })?.reason || "Enter editing mode to make these changes?"), resolve }));
+            setConsent(null);
+            if (!active.current) return;
+            if (accepted && !currentEditor.current) await onEnterEditing();
+            await addToolOutput({ tool: toolCall.toolName, toolCallId: toolCall.toolCallId, output: { editing: accepted, user_declined: !accepted } });
+            return;
+          }
+          const editor = currentEditor.current;
+          if (!editor) {
+            if (toolCall.toolName !== "read_notebook") throw new Error("Ask permission with request_editing before editing or running cells.");
+            const response = await fetch(`/api/notebooks/${notebookId}/download`);
+            if (!response.ok) throw new Error("Could not read the published notebook.");
+            const notebook = await response.json();
+            const text = (value: unknown) => Array.isArray(value) ? value.join("") : String(value ?? "");
+            const cells = notebook.cells.map((cell: { id?: string; cell_type: string; source: unknown; outputs?: { text?: unknown; data?: Record<string, unknown>; evalue?: string }[] }, index: number) => ({
+              id: cell.id || `published-${index}`, cell_type: cell.cell_type, source: text(cell.source),
+              outputs: (cell.outputs || []).slice(-10).map(output => ({ text: text(output.text ?? output.data?.["text/plain"]).slice(-8000), error: output.evalue, has_image: !!output.data?.["image/png"] })),
+            }));
+            if (JSON.stringify(cells).length > 150000) throw new Error("Notebook is too large for chat (150 KB text limit).");
+            await addToolOutput({ tool: toolCall.toolName, toolCallId: toolCall.toolCallId, output: { version: "published", cells } });
+            return;
+          }
           if (toolCall.toolName === "rename_notebook") {
             const args = toolCall.input as { title?: unknown };
             const response = await fetch(`/api/notebooks/${notebookId}/rename`, {
@@ -104,7 +135,7 @@ export function Chat({
                 reject(
                   new Error(
                     type === "vercel-notebook-capabilities"
-                      ? "This editor is running an older or unresponsive bridge. Reconnect the editor before continuing chat."
+                      ? "This editor is running an older or unresponsive bridge. The editor may be recovering; wait briefly and retry."
                       : "Jupyter timed out. A running cell may still be executing; inspect it before retrying.",
                   ),
                 );
@@ -140,8 +171,14 @@ export function Chat({
           };
           if (!compatible.current) {
             try {
-              const capabilities = await request("vercel-notebook-capabilities", 5000) as { protocol?: number };
-              if (capabilities.protocol !== 2) throw new Error("Reconnect the editor to update its notebook tools.");
+              let capabilities = await request("vercel-notebook-capabilities", 5000) as { protocol?: number; ready?: boolean };
+              const deadline = Date.now() + 60000;
+              while (capabilities.ready === false && active.current && Date.now() < deadline) {
+                await new Promise(resolve => setTimeout(resolve, 250));
+                capabilities = await request("vercel-notebook-capabilities", 5000) as { protocol?: number; ready?: boolean };
+              }
+              if (capabilities.ready === false) throw new Error("The notebook is still loading. Please retry shortly.");
+              if (capabilities.protocol !== 2) throw new Error("The editor needs updated notebook tools. Automatic recovery will retry.");
               compatible.current = true;
             } catch (error) {
               halted.current = true;
@@ -165,7 +202,7 @@ export function Chat({
         } catch (error) {
           if (++failures.current >= 3) halted.current = true;
           if (halted.current && active.current)
-            setToolError(previous => previous || (error instanceof Error ? error.message : "Notebook tools failed. Reconnect the editor."));
+            setToolError(previous => previous || (error instanceof Error ? error.message : "Notebook tools failed. The editor will recover if its runtime is unavailable."));
           if (active.current)
             await addToolOutput({
               tool: toolCall.toolName,
@@ -182,14 +219,16 @@ export function Chat({
     },
   });
   const busy = status === "submitted" || status === "streaming" || pending > 0;
-  const history = useNotebookHistory(notebookId, editor.token, messages, setMessages, busy);
+  const history = useNotebookHistory(notebookId, null, messages, setMessages, busy);
   useEffect(() => {
     onBusy(busy || history.blocking);
   }, [busy, history.blocking, onBusy]);
+  useEffect(() => { compatible.current = false; }, [editor?.token]);
   useEffect(() => {
     active.current = true;
     return () => {
       active.current = false;
+      consentRef.current?.resolve(false);
       void stop();
       onBusy(false);
     };
@@ -236,8 +275,7 @@ export function Chat({
         </div>}
         {history.loaded && !messages.length && (
           <p className="chat-hint">
-            Ask me to fix a bug, explain a cell, or plot a chart. I can edit and
-            run cells in this notebook. Changes stay in your draft.
+            {editor ? "Ask me to fix a bug, explain a cell, or plot a chart. Changes stay in your draft." : "Ask about this notebook. I can read its published cells and outputs without starting an editor."}
           </p>
         )}
         {messages.map((message) => (
@@ -265,10 +303,15 @@ export function Chat({
             )}
           </div>
         ))}
-        {busy && (
+        {consent && <div className="chat-consent" role="group" aria-label="Enter editing mode?">
+          <p>{consent.reason}</p><p>Enter editing mode?</p>
+          <button className="button primary" onClick={() => { consent.resolve(true); setConsent(null); }}>Yes</button>{" "}
+          <button className="button" onClick={() => { consent.resolve(false); setConsent(null); }}>No</button>
+        </div>}
+        {busy && !consent && (
           <p className="chat-hint chat-status" role="status">
             <LoaderCircle size={14} className="spin" aria-hidden="true" />
-            {pending ? "Working in Jupyter…" : "Thinking…"}
+            {pending ? (editor ? "Working on notebook…" : "Reading notebook…") : "Thinking…"}
           </p>
         )}
         {count.current >= 24 && !busy && (
@@ -319,6 +362,8 @@ export function Chat({
               className="button"
               onClick={() => {
                 halted.current = true;
+                consentRef.current?.resolve(false);
+                setConsent(null);
                 void stop();
               }}
             >

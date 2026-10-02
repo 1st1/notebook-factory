@@ -813,3 +813,6 @@ main > .error > button { flex-shrink: 0; }
 
 .button.delete-notebook { color: #ba5549; border-color: #dfaaa2; background: transparent; padding: 10px 12px; }
 .button.delete-notebook:hover:not(:disabled) { background: #fff0ed; border-color: #ba5549; }
+
+.chat-consent { margin: 12px 0; padding: 14px; border: 1px solid #d8dece; border-radius: 8px; background: #eef1e7; }
+.chat-consent p { margin: 0 0 10px; }

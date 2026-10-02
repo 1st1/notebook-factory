@@ -714,3 +714,55 @@ def test_late_autosave_cannot_overwrite_atomic_close(client, monkeypatch, operat
         assert "Old autosave" not in row["source"]
 
     client.portal.call(scenario)
+
+
+# @lat: [[chat#Viewing mode tests]]
+def test_view_chat_and_history_do_not_require_or_start_editor(client, monkeypatch):
+    id = create(client)
+    modes = []
+
+    async def stream(messages, message_id=None, *, editing):
+        modes.append(editing)
+        yield 'data: [DONE]\n\n'
+
+    monkeypatch.setattr(main.chat, "stream", stream)
+    start = AsyncMock()
+    monkeypatch.setattr(main.editor, "start", start)
+    messages = [{"id": "u1", "role": "user", "parts": [{"type": "text", "text": "Explain this notebook"}]}]
+    assert client.post(f"/api/notebooks/{id}/chat", json={"messages": messages}).status_code == 200
+    assert modes == [False]
+    assert client.post(f"/api/notebooks/{id}/chat-history", json={}).json() == {"messages": [], "revision": 0}
+    assert client.put(f"/api/notebooks/{id}/chat-history", json={"messages": messages, "revision": 0}).status_code == 200
+    assert client.post(f"/api/notebooks/{id}/chat-history", json={}).json()["messages"][0]["parts"][0]["text"] == "Explain this notebook"
+    assert client.put(f"/api/notebooks/{id}/chat-history", json={"messages": [], "revision": 0}).status_code == 409
+    assert {tool.name for tool in main.chat.VIEW_TOOLS} == {"read_notebook", "request_editing"}
+    start.assert_not_awaited()
+    client.cookies.clear()
+    assert client.post(f"/api/notebooks/{id}/chat", json={"messages": messages}).status_code == 401
+    assert client.post(f"/api/notebooks/{id}/chat-history", json={}).status_code == 401
+
+
+# @lat: [[editing#Automatic recovery tests]]
+def test_editor_status_distinguishes_expiry_without_reading_disk(client, monkeypatch):
+    id = create(client)
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value={"name": "health", "token": "t", "url": "https://example.test"}))
+    monkeypatch.setattr(main.editor, "read", AsyncMock(side_effect=AssertionError("Must not read disk")))
+    client.post(f"/api/notebooks/{id}/editor")
+    route = f"/api/notebooks/{id}/editor-status"
+    assert client.post(route, json={"token": "stale"}).status_code == 409
+    assert client.post(route, json={"token": "t"}).json() == {"available": True}
+    monkeypatch.setattr(main.editor, "check_available", AsyncMock(side_effect=main.HTTPException(410, "Expired")))
+    assert client.post(route, json={"token": "t"}).status_code == 410
+    main.editor.read.assert_not_awaited()
+
+
+def test_navigation_close_can_retry_lost_acknowledgement(client, monkeypatch):
+    id = create(client)
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value={"name": "retry", "token": "t", "url": "https://example.test"}))
+    monkeypatch.setattr(main.editor, "stop", AsyncMock())
+    client.post(f"/api/notebooks/{id}/editor")
+    body = {"token": "t", "source": new_notebook("Navigation draft")}
+    assert client.post(f"/api/notebooks/{id}/close", json=body).status_code == 200
+    assert client.post(f"/api/notebooks/{id}/close", json=body).status_code == 200
+    assert client.post(f"/api/notebooks/{id}/close", json={**body, "source": new_notebook("Different draft")}).status_code == 409
+    assert "Navigation draft" in client.portal.call(main.get_notebook, id)["source"]

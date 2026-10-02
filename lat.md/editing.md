@@ -59,17 +59,17 @@ Save & exit renders the saved document once and uploads the rendered HTML to Blo
 
 ## Closing and recovery
 
-Exit discards the private draft, including autosaved changes, and restores the last published document through [[backend/main.py#discard]]. It skips Jupyter saving, detaches the session, and schedules shutdown. Save & exit publishes through the close endpoint.
+Notebook navigation preserves the private draft and leaves editing without publishing. The Exit and Reconnect buttons are removed. Save & exit remains the explicit publication action. The discard API remains available for legacy clients.
 
 [[backend/main.py#close]] saves the exported draft and clears the current editor record in a single conditional database update before returning success. [[backend/main.py#stop_closed_editor]] retires only the detached Jupyter session and its document as a response background task. The VM and other kernels stay running.
 
 App autosaves and Save & exit export the full in-memory Jupyter model, including outputs, without invoking its server save or waiting on dialogs. The authenticated save endpoint validates the document and active session before persisting it. The iframe remains mounted until persistence succeeds. Sandbox keepalive is best effort after draft persistence and is skipped on close.
 
-Reconnect first persists the browser document and detaches the old session, then opens a fresh document session from the durable draft, reusing the shared runtime when healthy. A dead Sandbox does not prevent recovery while the loaded browser model and current session token remain available. Already-open editors running an older bridge cannot export this way; do not reload them expecting to recover unsaved changes.
+Automatic recovery first persists the browser document and detaches the old session, then opens a fresh document session from the durable draft, reusing the shared runtime when healthy. A dead Sandbox does not prevent recovery while the loaded browser model and current session token remain available. Already-open editors running an older bridge cannot export this way; do not reload them expecting to recover unsaved changes.
 
 Background shutdown errors are logged; the Sandbox execution limit bounds its remaining lifetime. This background task is not a durable job queue. Reopening before expiry reuses the running Jupyter server and starts a new kernel for the stored document.
 
-Notebook documents and their saved outputs persist in Postgres. Uploaded side files and extra installed dependencies persist on the shared workspace drive; kernel memory does not. Exit discards notebook edits, not installed packages or side files. Closing the browser stops app autosaves/heartbeats, so changes since the last successful durable save can be lost. A before-unload warning is advisory, not persistence.
+Notebook documents and their saved outputs persist in Postgres. Uploaded side files and extra installed dependencies persist on the shared workspace drive; kernel memory does not. Navigation preserves edits, packages, and side files. Closing the browser stops app autosaves/heartbeats, so changes since the last successful durable save can be lost. A before-unload warning is advisory, not persistence.
 
 ## Save serialization
 
@@ -77,7 +77,7 @@ Jupyter disk autosave is disabled. The bridge still serializes explicit Jupyter 
 
 JupyterLab 4.4.10 can otherwise overlap these operations: a second save reads a new disk hash before the first save updates the context hash, producing a false File Changed dialog. This was reproduced with one page and no external writer in a disposable Sandbox.
 
-The queue preserves errors for the requesting caller and continues after a rejected save. It does not disable Jupyter's conflict checks or automatically overwrite external changes. The bridge is installed during Sandbox startup, so existing editors need to leave editing and reopen to receive it. Use Save & exit to preserve edits publicly; Exit discards them.
+The queue preserves errors for the requesting caller and continues after a rejected save. It does not disable Jupyter's conflict checks or automatically overwrite external changes. The bridge is installed during Sandbox startup, so existing editors need to leave editing and reopen to receive it. Use Save & exit to publish; navigation leaves the changes in the private draft.
 
 ## Upstream integration comparison
 
@@ -97,7 +97,7 @@ Editor environments belong to the deployment that created them. Opening or recon
 
 [[backend/editor.py#generation]] uses Vercel's deployment ID (deployment URL fallback); local development hashes bundled editor assets, provisioning code, and Python dependency declarations. Legacy sessions without a generation are stale. This policy governs live editor reuse. The shared dependency drive contains no notebook, bridge, app origin, or editor token, so it can be reused while each deployment injects fresh app assets.
 
-[[backend/main.py#provision_editor]] checks runtime availability without reading its notebook file. A replacement always receives the Postgres draft, because manual disk saves can lag behind browser edits. Reconnect exports the current browser document first. Opening from another tab can recover only the last acknowledged database draft; it cannot recover unexported edits from a different browser.
+[[backend/main.py#provision_editor]] checks runtime availability without reading its notebook file. A replacement always receives the Postgres draft, because manual disk saves can lag behind browser edits. Automatic recovery exports the current browser document first. Opening from another tab can recover only the last acknowledged database draft; it cannot recover unexported edits from a different browser.
 
 The next open on a new deployment replaces the shared runtime, interrupting kernels still using the previous generation. Their browser documents remain exportable for recovery. Regression coverage verifies same-deployment reuse, failed replacement, preservation of a database draft that differs from the Sandbox file, and stale-token rejection.
 
@@ -163,4 +163,20 @@ Close and discard must finish while an older autosave is still in flight. A cond
 
 [[frontend/src/main.tsx]] supersedes and aborts older app autosave requests when closing, ignores their late responses, and keeps the live document mounted until Save & exit succeeds. Aborting a fetch is not the correctness guarantee: [[backend/main.py#save_draft]] conditions its database write on the same active editor record. Close stores the final document and clears that record together. App autosaves do not acquire the editor-operation lease, so they cannot block close. Metadata refresh after publication runs without holding the editor open.
 
-Browser verification deliberately stalls an autosave and the post-publication metadata requests, then confirms both Exit and Save & exit leave editing mode. Rendering and Blob upload still precede publication acknowledgement.
+Browser verification deliberately stalls an autosave and the post-publication metadata requests, then confirms close/discard API ordering and that Save & exit leaves editing mode. Rendering and Blob upload still precede publication acknowledgement.
+
+## Automatic recovery tests
+
+The owner-only editor-status endpoint reports expiry without reading stale notebook files. A browser health check detects an expired runtime, exports the live document, saves it, and opens a replacement automatically.
+
+[[backend/main.py#editor_status]] distinguishes expired runtimes from transient failures. [[frontend/src/main.tsx]] checks every 15 seconds outside startup/publication. Recovery never blindly reruns code; kernel variables are lost. Failure to export leaves the original browser document intact and reports an error rather than silently replacing unsaved work.
+
+## Immediate navigation
+
+Switching from editing selects the destination and displays its published content immediately, then loads its editor. The published preview stays visible until the new Jupyter document reports ready through the bridge.
+
+The outgoing iframe is retained only until its live document is exported. Its save/close request proceeds in the background with an in-memory retry queue and an unload warning while unacknowledged. Switching back awaits that notebook's pending save. Navigation sequence checks prevent a late startup from replacing a newer selection. The logo returns to the unselected workspace after exporting memory, without waiting for database persistence.
+
+Background draft requests have bounded timeouts and retry automatically. [[backend/main.py#close]] acknowledges an already-closed matching draft idempotently, covering a lost response after commit. Pending exports remain tab-local until acknowledged; an unload warning cannot guarantee recovery after a browser crash. Navigation remains blocked during active assistant work to avoid abandoning a tool mid-execution.
+
+[Browser flow regression](../frontend/tests/notebook_flows.cjs) stalls the outgoing save, delays the memory export, checks immediate destination selection and published preview, and completes editor startup. It also simulates Sandbox expiry and verifies automatic recovery using exported browser contents. Run after the frontend build with Playwright installed, optionally setting PLAYWRIGHT_MODULE to its module path.

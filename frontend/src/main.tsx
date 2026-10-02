@@ -32,7 +32,7 @@ type Auth = {
   configured: boolean;
   chat_model?: string;
 };
-type Editor = { name: string; url: string; token: string };
+type Editor = { name: string; url: string; token: string; notebookId?: string };
 async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(
     "/api" + path,
@@ -167,7 +167,16 @@ function App() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatBusy, setChatBusy] = useState(false);
-  const [closing, setClosing] = useState(false);
+  const [readyToken, setReadyToken] = useState<string | null>(null);
+  const navigation = useRef(0);
+  const startingEditors = useRef(new Map<string, { sequence: number; promise: Promise<void> }>());
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const recoveries = useRef(new Set<string>());
+  const snapshots = useRef(new Map<string, Promise<void>>());
+  const draftQueue = useRef(new Map<string, { token: string; source: string }>());
+  const draftRequests = useRef(new Map<string, Promise<void>>());
+  const [pendingDrafts, setPendingDrafts] = useState(0);
   const [saved, setSaved] = useState("");
   const [mobile, setMobile] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
@@ -175,6 +184,8 @@ function App() {
   const saving = useRef<AbortController | null>(null);
   const closingRef = useRef(false);
   const saveEpoch = useRef(0);
+  const activeEditor = editor?.notebookId === selected ? editor : null;
+  const editorReady = !!activeEditor && readyToken === activeEditor.token;
   const notebook = notebooks.find((n) => n.id === selected);
 
   const renameNotebook = useCallback((id: string, title: string) => {
@@ -256,7 +267,7 @@ function App() {
 
   const persist = useCallback(
     async (publish = false, close = false) => {
-      if (!editor || !selected) return;
+      if (!editor || !selected || editor.notebookId !== selected) return;
       if (closingRef.current || (!close && saving.current)) return;
       if (close) {
         closingRef.current = true;
@@ -303,31 +314,125 @@ function App() {
     [editor, selected, saveBridge, refresh],
   );
 
-  async function reconnectEditor() {
-    await persist(false, true);
-    setEditor(await api<Editor>(`/notebooks/${selected}/editor`, {}));
+  function flushDraft(id: string): Promise<void> {
+    const running = draftRequests.current.get(id);
+    if (running) return running;
+    const draft = draftQueue.current.get(id);
+    if (!draft) return Promise.resolve();
+    const request = api(`/notebooks/${id}/close`, { ...draft, publish: false }, AbortSignal.timeout(15000)).then(() => {
+      if (draftQueue.current.get(id) === draft) draftQueue.current.delete(id);
+      setPendingDrafts(draftQueue.current.size);
+      if (!draftQueue.current.size) setError(previous => previous === "A notebook draft is waiting to save. Keep this tab open; retrying automatically." ? "" : previous);
+    }).finally(() => { draftRequests.current.delete(id); });
+    draftRequests.current.set(id, request);
+    return request;
   }
 
-  async function discardEditor() {
-    if (!editor || !selected) return;
-    if (closingRef.current) return;
-    closingRef.current = true;
-    saveEpoch.current++;
+  function leaveEditor(): Promise<void> {
+    if (!editor?.notebookId) return Promise.resolve();
+    if (readyToken !== editor.token) { setEditor(null); return Promise.resolve(); }
+    const existing = snapshots.current.get(editor.token);
+    if (existing) return existing;
+    const outgoing = editor;
     saving.current?.abort();
     saving.current = null;
-    setClosing(true);
-    try {
-      await api(`/notebooks/${selected}/discard`, { token: editor.token });
-      setEditor(null);
+    saveEpoch.current++;
+    const snapshot = saveBridge().then(source => {
+      draftQueue.current.set(outgoing.notebookId!, { source, token: outgoing.token });
+      setPendingDrafts(draftQueue.current.size);
+      setEditor(current => current?.token === outgoing.token ? null : current);
       setSaved("");
+      void flushDraft(outgoing.notebookId!).catch(() => setError("A notebook draft is waiting to save. Keep this tab open; retrying automatically."));
+    }).finally(() => { snapshots.current.delete(outgoing.token); });
+    snapshots.current.set(outgoing.token, snapshot);
+    return snapshot;
+  }
+
+  function openEditor(id: string, sequence = navigation.current): Promise<void> {
+    const existing = startingEditors.current.get(id);
+    if (existing?.sequence === sequence) return existing.promise;
+    const promise = (async () => {
+      if (existing) await existing.promise.catch(() => {});
+      await loadEditor(id, sequence);
+    })().finally(() => {
+      if (startingEditors.current.get(id)?.promise === promise) startingEditors.current.delete(id);
+    });
+    startingEditors.current.set(id, { sequence, promise });
+    return promise;
+  }
+
+  async function loadEditor(id: string, sequence: number) {
+    if (selectedRef.current !== id || sequence !== navigation.current) return;
+    setSetupStage("Connecting…"); setSetupLog(""); setSetupSeconds(0); setSetupStarted(Date.now());
+    try {
+      await flushDraft(id);
+      if (sequence !== navigation.current) return;
+      const result = await startEditor(id, (kind, message) => {
+        if (sequence !== navigation.current) return;
+        if (kind === "progress") setSetupStage(message);
+        if (kind === "log") setSetupLog(log => (log + message).slice(-20000));
+      });
+      if (sequence !== navigation.current || selectedRef.current !== id) return;
+      setEditor({ ...result, notebookId: id });
+      setSetupStage("Loading notebook…");
+      // Let the iframe and Chat props observe the new session before tools continue.
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      await new Promise<void>((resolve, reject) => {
+        const requestId = crypto.randomUUID();
+        const origin = new URL(result.url).origin;
+        const cleanup = () => { clearInterval(poll); clearTimeout(timeout); window.removeEventListener("message", receive); };
+        const receive = (event: MessageEvent) => {
+          if (event.source !== frame.current?.contentWindow || event.origin !== origin || event.data?.id !== requestId) return;
+          if (event.data.result?.ready) { cleanup(); setReadyToken(result.token); setSetupStage(""); resolve(); }
+        };
+        const poll = setInterval(() => {
+          if (sequence !== navigation.current) { cleanup(); reject(new Error("Notebook selection changed.")); return; }
+          frame.current?.contentWindow?.postMessage({ type: "vercel-notebook-capabilities", id: requestId, token: result.token }, origin);
+        }, 250);
+        const timeout = setTimeout(() => { cleanup(); reject(new Error("The editor is still loading. Try the request again shortly.")); }, 60000);
+        window.addEventListener("message", receive);
+      });
     } finally {
-      setClosing(false);
-      closingRef.current = false;
+      if (sequence === navigation.current) setSetupStarted(null);
     }
   }
 
   useEffect(() => {
-    if (!editor) return;
+    if (!pendingDrafts) return;
+    const timer = setInterval(() => {
+      for (const id of draftQueue.current.keys()) void flushDraft(id).catch(() => {});
+    }, 5000);
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => { clearInterval(timer); window.removeEventListener("beforeunload", warn); };
+  }, [pendingDrafts]);
+
+  useEffect(() => {
+    if (!activeEditor || busy || setupStarted !== null) return;
+    let cancelled = false;
+    const sequence = navigation.current;
+    const check = async () => {
+      try {
+        const response = await fetch(`/api/notebooks/${activeEditor.notebookId}/editor-status`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: activeEditor.token }),
+        });
+        if (response.status !== 410 || cancelled || recoveries.current.has(activeEditor.token)) return;
+        recoveries.current.add(activeEditor.token);
+        setError("");
+        setSetupStage("Recovering your Python environment…");
+        await leaveEditor();
+        if (sequence === navigation.current && selectedRef.current === activeEditor.notebookId) await openEditor(activeEditor.notebookId!, sequence);
+      } catch (error) {
+        recoveries.current.delete(activeEditor.token);
+        if (sequence === navigation.current) setError(error instanceof Error ? error.message : "Automatic editor recovery failed.");
+      }
+    };
+    const timer = setInterval(() => { void check(); }, 15000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [activeEditor, busy, setupStarted]);
+
+  useEffect(() => {
+    if (!activeEditor || !editorReady) return;
     const interval = setInterval(() => {
       if (saving.current || closingRef.current) return;
       persist().catch((e) => setError(e.message));
@@ -340,7 +445,7 @@ function App() {
       clearInterval(interval);
       window.removeEventListener("beforeunload", unload);
     };
-  }, [editor, persist]);
+  }, [activeEditor, editorReady, persist]);
 
   async function action(label: string, operation: () => Promise<void>) {
     setBusy(label);
@@ -353,13 +458,25 @@ function App() {
       setBusy("");
     }
   }
-  async function choose(id: string) {
-    if (busy || chatBusy || saving.current || id === selected) return;
-    await action("Opening notebook", async () => {
-      if (editor) await persist(false, true);
-      setSelected(id);
-      setMobile(false);
-    });
+  async function choose(id: string | null) {
+    if (chatBusy || closingRef.current || id === selected) return;
+    const editing = !!editor || setupStarted !== null;
+    const outgoingId = editor?.notebookId;
+    const sequence = ++navigation.current;
+    if (id === null) await leaveEditor();
+    selectedRef.current = id;
+    setSelected(id); setMobile(false); setError(""); setSetupStage(""); setSetupStarted(null);
+    let exported = false;
+    try {
+      // Selection changes immediately; retain the old iframe only until its memory is exported.
+      await leaveEditor();
+      exported = true;
+      if (id && editing && sequence === navigation.current) await openEditor(id, sequence);
+    } catch (error) {
+      if (sequence !== navigation.current) return;
+      setError(error instanceof Error ? error.message : "Could not switch notebooks.");
+      if (!exported && editor && outgoingId) { selectedRef.current = outgoingId; setSelected(outgoingId); }
+    }
   }
   const date = notebook
     ? new Date(notebook.updated_at * 1000).toLocaleDateString(undefined, {
@@ -384,12 +501,7 @@ function App() {
             href="/"
             onClick={(e) => {
               e.preventDefault();
-              if (busy || chatBusy || saving.current) return;
-              void action("Returning to workspace…", async () => {
-                if (editor) await persist(false, true);
-                setSelected(null);
-                setMobile(false);
-              });
+              void choose(null);
             }}
           >
             <span className="brand-icon">
@@ -549,65 +661,23 @@ function App() {
                       }}
                     ><Trash2 size={16} strokeWidth={1.5} /></button>
                   )}
-                  {auth.can_edit &&
-                    (!editor ? (
-                      <button
-                        className="button primary"
-                        disabled={!!busy || chatBusy}
-                        onClick={() =>
-                          action(
-                            "Starting your Python environment…",
-                            async () => {
-                              setSetupStage("Connecting…");
-                              setSetupLog("");
-                              setSetupSeconds(0);
-                              setSetupStarted(Date.now());
-                              try {
-                                setEditor(await startEditor(selected!, (kind, message) => {
-                                  if (kind === "progress") setSetupStage(message);
-                                  if (kind === "log") setSetupLog(log => (log + message).slice(-20000));
-                                }));
-                                setSetupStage("");
-                              } finally {
-                                setSetupStarted(null);
-                              }
-                            },
-                          )
-                        }
-                      >
-                        <Pencil size={15} /> Edit notebook
-                      </button>
-                    ) : (
-                      <>
-                        <button className="button" disabled={!!busy || chatBusy} onClick={() => action("Reconnecting…", reconnectEditor)} title="Preserve the notebook and start a fresh Python runtime">Reconnect</button>
-                        <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(value => !value)}><MessageSquare size={16}/>Chat</button>
-                        <button
-                          className="button"
-                          disabled={!!busy || chatBusy}
-                          onClick={() =>
-                            action("Discarding draft…", discardEditor)
-                          }
-                        >
-                          Exit
-                        </button>
-                        <button
-                          className="button primary"
-                          disabled={!!busy || chatBusy}
-                          onClick={() =>
-                            action("Saving and closing…", () => persist(true, true))
-                          }
-                        >
-                          <ArrowUpRight size={16} /> Save &amp; exit
-                        </button>
-                      </>
-                    ))}
+                  {auth.can_edit && <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(value => !value)}><MessageSquare size={16}/>Chat</button>}
+                  {auth.can_edit && (!activeEditor ? (
+                    <button className="button primary" disabled={!!busy || setupStarted !== null} onClick={() => { void openEditor(selected!).catch(e => setError(e.message)); }}>
+                      <Pencil size={15} /> Edit notebook
+                    </button>
+                  ) : (
+                    <button className="button primary" disabled={!!busy || chatBusy || !editorReady} onClick={() => action("Saving and closing…", () => persist(true, true))}>
+                      <ArrowUpRight size={16} /> Save &amp; exit
+                    </button>
+                  ))}
                 </div>
               </div>
               <div className="metadata">
                 <span className="python-dot" /> Python 3 <span>·</span> Updated{" "}
                 {date}
                 <span>·</span>
-                {editor
+                {activeEditor
                   ? saved || "Drafts autosave every 30 seconds"
                   : `Revision ${notebook.revision}`}
               </div>
@@ -632,14 +702,14 @@ function App() {
               </section>
             )}
             <div className="notebook-workspace">
-            <div className={"notebook-surface " + (editor ? "editing" : "")}>
+            <div className={"notebook-surface " + (activeEditor ? "editing" : "")}>
               <div className="surface-toolbar">
                 <span>
-                  <span className={editor ? "green-dot" : "gray-dot"} />
-                  {editor ? "JUPYTER LAB" : "NOTEBOOK"}
+                  <span className={activeEditor ? "green-dot" : "gray-dot"} />
+                  {activeEditor ? "JUPYTER LAB" : "NOTEBOOK"}
                 </span>
                 <span>
-                  {editor ? (
+                  {activeEditor ? (
                     "Changes are private until published"
                   ) : (
                     <>
@@ -648,26 +718,17 @@ function App() {
                   )}
                 </span>
               </div>
-              {closing ? (
-                <div className="empty" role="status">Closing editor…</div>
-              ) : editor ? (
-                <iframe
-                  key={editor.url}
-                  ref={frame}
-                  title="Jupyter notebook editor"
-                  src={editor.url}
-                  referrerPolicy="no-referrer"
-                  allow="clipboard-read; clipboard-write"
-                />
-              ) : (
-                <PublishedNotebook
-                  key={`${selected}-${renderVersion}-${notebook.render_url || "local"}`}
-                  notebook={notebook}
-                  version={renderVersion}
-                />
-              )}
+              {editor && <iframe
+                key={editor.url} ref={frame} title="Jupyter notebook editor" src={editor.url}
+                style={editorReady ? undefined : { display: "none" }} referrerPolicy="no-referrer"
+                allow="clipboard-read; clipboard-write"
+              />}
+              {!editorReady && <PublishedNotebook
+                key={`${selected}-${renderVersion}-${notebook.render_url || "local"}`}
+                notebook={notebook} version={renderVersion}
+              />}
             </div>
-            {editor && <Suspense fallback={null}><Chat model={auth.chat_model} key={editor.token} notebookId={selected!} editor={editor} frame={frame} disabled={!!busy || closing} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy} onRename={renameNotebook}/></Suspense>}
+            {auth.can_edit && <Suspense fallback={null}><Chat model={auth.chat_model} key={selected!} notebookId={selected!} editor={activeEditor} frame={frame} disabled={!!busy} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy} onRename={renameNotebook} onEnterEditing={() => openEditor(selected!, navigation.current)} /></Suspense>}
             </div>
           </>
         ) : notebooks.length > 0 ? (
@@ -717,16 +778,6 @@ function App() {
         {error && (
           <div className="error" role="alert">
             <span>{error}</span>
-            {editor && (
-              <button
-                disabled={!!busy || chatBusy}
-                onClick={() =>
-                  action("Reconnecting…", reconnectEditor)
-                }
-              >
-                Reconnect editor
-              </button>
-            )}
             <button aria-label="Dismiss error" onClick={() => setError("")}>
               <X size={16} />
             </button>

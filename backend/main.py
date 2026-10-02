@@ -317,6 +317,13 @@ async def checked_editor(id, token):
     return row, current
 
 
+@app.post("/api/notebooks/{id}/editor-status", dependencies=[Depends(require_owner)])
+async def editor_status(id: str, body: EditorRequest):
+    _, current = await checked_editor(id, body.token)
+    await editor.check_available(current)
+    return {"available": True}
+
+
 @app.post("/api/notebooks/{id}/save", dependencies=[Depends(require_owner)])
 async def save(id: str, body: EditorRequest, background_tasks: BackgroundTasks):
     _, current = await checked_editor(id, body.token)
@@ -364,6 +371,10 @@ async def save_draft(id: str, body: EditorRequest, *, closing=False):
 @app.post("/api/notebooks/{id}/close", dependencies=[Depends(require_owner)])
 async def close(id: str, body: EditorRequest, background_tasks: BackgroundTasks):
     async with editor_lease(id):
+        row = await get_notebook(id)
+        # A navigation save may have committed before its acknowledgement was lost.
+        if not row["editor"] and not body.publish and body.source is not None and row["source"] == body.source:
+            return {"closed": True}
         row, current = await checked_editor(id, body.token)
         # Saving first means a failed persistence operation never destroys the draft.
         await save_draft(id, body, closing=True)
@@ -443,18 +454,22 @@ async def notebook_chat(id: str, request: Request):
         messages, _ = chat.ai.ui.ai_sdk.to_messages(body.messages)
     except ValueError:
         raise HTTPException(422, "Invalid chat messages") from None
-    await checked_editor(id, body.token)
+    if body.token:
+        await checked_editor(id, body.token)
+    else:
+        await get_notebook(id)
     return StreamingResponse(
         chat.stream(
-            messages, body.messages[-1].id if body.messages[-1].role == "assistant" else None
+            messages, body.messages[-1].id if body.messages[-1].role == "assistant" else None,
+            editing=bool(body.token),
         ),
         headers=chat.ai.ui.ai_sdk.UI_MESSAGE_STREAM_HEADERS,
     )
 
 
 @app.post("/api/notebooks/{id}/chat-history", dependencies=[Depends(require_owner)])
-async def load_chat_history(id: str, body: EditorRequest):
-    row, _ = await checked_editor(id, body.token)
+async def load_chat_history(id: str, body: chat.ChatRequestToken):
+    row = (await checked_editor(id, body.token))[0] if body.token else await get_notebook(id)
     return {"messages": json.loads(row["chat_history"] or "[]"), "revision": row["chat_revision"]}
 
 
@@ -467,7 +482,7 @@ async def save_chat_history(id: str, request: Request):
         body = chat.HistoryRequest.model_validate_json(raw)
     except ValueError:
         raise HTTPException(422, "Invalid chat history") from None
-    row, _ = await checked_editor(id, body.token)
+    row = (await checked_editor(id, body.token))[0] if body.token else await get_notebook(id)
     history = json.dumps(chat.history_messages(body.messages))
     if len(history.encode()) > 1_000_000:
         raise HTTPException(413, "Chat history is too large. Start a new chat.")
@@ -476,7 +491,7 @@ async def save_chat_history(id: str, request: Request):
             update(notebooks)
             .where(
                 notebooks.c.id == id,
-                notebooks.c.editor == row["editor"],
+                (notebooks.c.editor == row["editor"]) if body.token else True,
                 notebooks.c.chat_revision == body.revision,
             )
             .values(chat_history=history, chat_revision=body.revision + 1)

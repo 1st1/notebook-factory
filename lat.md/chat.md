@@ -1,8 +1,8 @@
 # Notebook chat
 
-The editor's Chat button opens a right sidebar where the assistant can read, edit, and execute the active notebook using Python AI SDK and AI SDK UI.
+Chat is available while viewing or editing a notebook. Viewing answers use published content without a Sandbox; edits and execution require an editor, opened through explicit Yes/No consent.
 
-[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and an active editor token on every model turn. Cmd+Enter or Ctrl+Enter submits the chat composer; plain Enter inserts a newline. History is private, stored per notebook in Postgres, and restored when the editor reopens.
+[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and validates an editor token when supplied. Tokenless owner requests use the restricted viewing prompt and tools. Cmd+Enter or Ctrl+Enter submits the chat composer; plain Enter inserts a newline. History is private, stored per notebook in Postgres, and restored when the editor reopens.
 
 ## Agent and streaming
 
@@ -18,7 +18,7 @@ The [Jupyter bridge](../backend/assets/jupyter_bridge.js) operates on the curren
 
 Read returns cell IDs, sources, and text/error outputs, excluding image data. Replace and run require exact expected source, rejecting stale edits. Insert creates a new code or markdown cell; execution uses Jupyter's run-cell command so outputs and charts appear normally. The scroll tool moves the notebook up/down by a page, to its top/bottom, or to a cell ID with start/center/end alignment. It uses Jupyter's virtualized-list API to reveal offscreen cells without changing selection or notebook content. The prompt instructs the assistant to reveal edited cells and outputs. Tools serialize and validate the parent origin, window identity, session token, and request ID.
 
-Exit, Save & exit, and notebook navigation are disabled during assistant work. Closing the chat sidebar keeps the session running. Stop reply cancels model streaming and skips queued tools; an already-started cell continues running and can be interrupted in Jupyter. Tool response waits time out after two minutes. Normal draft autosaving, explicit publication, and discard semantics still apply.
+Save & exit and notebook navigation are disabled during assistant work. Closing the chat sidebar keeps the session running. Stop reply cancels model streaming and skips queued tools; an already-started cell continues running and can be interrupted in Jupyter. Tool response waits time out after two minutes. Normal draft autosaving, explicit publication, and discard semantics still apply.
 
 ## Live document tests
 
@@ -48,7 +48,7 @@ Bridge tests verify page scrolling is confined to the notebook, cell IDs resolve
 
 ## Bridge compatibility and recovery
 
-Chat checks the embedded bridge protocol before invoking tools. Older or unresponsive bridges stop the turn with a reconnect message instead of misinterpreting new tools as edits.
+Chat checks the embedded bridge protocol before invoking tools. The handshake also reports document readiness, so tools wait for loading. Expired runtimes recover automatically; timed-out cell execution is never blindly replayed.
 
 Unknown tools are rejected before cell lookup. Source conflicts return the current cell ID and bounded source so the assistant can adapt its operation; missing cells require a fresh read. The prompt requires using new source after replacements and skipping unavailable scrolling. Three consecutive tool failures pause automatic continuation. The exact-source guard remains in place to protect newer edits and prevent execution of unexpected code.
 
@@ -70,7 +70,7 @@ Chat renders GitHub-flavored Markdown tables in horizontally scrollable containe
 
 [[frontend/src/useNotebookHistory.ts#useNotebookHistory]] loads the notebook conversation and saves it after each completed or stopped turn. History survives publishing, discarding edits, reconnecting, and reopening the editor.
 
-[[backend/main.py#load_chat_history]] and [[backend/main.py#save_chat_history]] require the owner, same-origin requests, and a current editor token. Revision checks reject concurrent stale writes, and private history is excluded from public notebook metadata and exports. Storage uses the existing one-megabyte and 160-message limits. New chat clears the saved conversation; it does not change notebook content.
+[[backend/main.py#load_chat_history]] and [[backend/main.py#save_chat_history]] require the owner and same-origin requests. The UI saves history independently of the editor token so a viewing-to-editing handoff preserves the same conversation; legacy token-bearing calls still validate that token. Revision checks reject concurrent stale writes, and private history is excluded from public notebook metadata and exports. Storage uses the existing one-megabyte and 160-message limits. New chat clears the saved conversation; it does not change notebook content.
 
 [[backend/chat.py#history_messages]] marks unfinished tools as interrupted when storing them. Rehydration does not submit model requests or replay tools; the next user message begins a fresh turn. The prompt treats previous results as historical because notebook edits may have been discarded and kernel memory may have changed.
 
@@ -87,8 +87,16 @@ Browser checks cover restoration without model/tool replay, completed-turn persi
 
 The assistant can rename the current notebook when the user asks. The header, sidebar, and cached notebook metadata update immediately after a successful response.
 
-The rename tool calls [[backend/main.py#rename_notebook]], requiring owner authentication, exact Origin, and the current editor token under the editor lease. Titles are trimmed, nonempty, and limited to 120 characters. This changes public workspace metadata immediately and survives Exit; it does not change cells, publication revision, or the Sandbox filename. Rename-only requests receive a brief chat confirmation without adding notebook cells.
+The rename tool calls [[backend/main.py#rename_notebook]], requiring owner authentication, exact Origin, and the current editor token under the editor lease. Titles are trimmed, nonempty, and limited to 120 characters. This changes public workspace metadata immediately; it does not change cells, publication revision, or the Sandbox filename. Rename-only requests receive a brief chat confirmation without adding notebook cells.
 
 ## Notebook rename tests
 
 API coverage checks owner and Origin enforcement, stale editor tokens, blank and oversized titles, persistence of trimmed titles, and preservation of published document contents.
+
+## Viewing mode tests
+
+Owner chat works without an editor and does not start a Sandbox. Its tools are limited to reading the published document and requesting permission to enter editing; private history remains protected and revision-checked.
+
+[[backend/chat.py#VIEW_TOOLS]] and [[backend/chat.py#VIEW_SYSTEM]] keep explanations in chat. [[frontend/src/Chat.tsx#Chat]] reads published cells and bounded text outputs from the download endpoint. The permission tool displays Yes/No buttons. No returns a declined result without starting anything. Yes awaits editor and document readiness, then continues the same turn using the active editor token and full editing tools. The assistant rereads the live draft because it may differ from published content.
+
+Browser verification covers published context, no Sandbox on questions or refusal, accepting consent, retaining the conversation, and authenticated mode changes on continuation. Chat remains owner-only in both modes.

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { UIMessage } from "ai";
 
-export function useNotebookHistory(notebookId: string, token: string, messages: UIMessage[], setMessages: (messages: UIMessage[]) => void, busy: boolean) {
+export function useNotebookHistory(notebookId: string, token: string | null, messages: UIMessage[], setMessages: (messages: UIMessage[]) => void, busy: boolean) {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
