@@ -4,7 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import main
-from auth import COOKIE, signer
+from accounts import enroll
+from auth import COOKIE, SESSION_SALT, signer
 from render import new_notebook
 
 
@@ -13,11 +14,13 @@ def client(monkeypatch):
     monkeypatch.setattr(main.editor, "check_available", AsyncMock())
     monkeypatch.setattr(main.editor, "keep_alive", AsyncMock())
     with TestClient(main.app) as client:
+        client.portal.call(enroll, {"sub": "vercel-1st1", "preferred_username": "1st1"})
         yield client
 
 
 def authenticate(client, login="1st1"):
-    client.cookies.set(COOKIE, signer.dumps({"login": login, "id": 1 if login == "1st1" else 1000 + sum((i + 1) * ord(c) for i, c in enumerate(login))}, salt="session"))
+    client.portal.call(enroll, {"sub": "vercel-" + login, "preferred_username": login})
+    client.cookies.set(COOKIE, signer.dumps({"provider": "vercel", "sub": "vercel-" + login}, salt=SESSION_SALT))
     client.headers["origin"] = "http://localhost:5173"
 
 
@@ -343,32 +346,6 @@ def test_publish_updates_html_atomically_and_drafts_leave_it_unchanged(client, m
     assert client.get(f"/api/notebooks/{id}/render").text == published
     assert "Must not publish" not in client.get(f"/api/notebooks/{id}/download").text
     assert client.portal.call(main.get_notebook, id)["revision"] == revision
-
-
-@pytest.mark.asyncio
-async def test_initialize_adds_html_to_existing_database(tmp_path, monkeypatch):
-    from sqlalchemy import text
-    from sqlalchemy.ext.asyncio import create_async_engine
-
-    import db
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'legacy.db'}")
-    monkeypatch.setattr(db, "engine", engine)
-    try:
-        async with engine.begin() as conn:
-            await conn.execute(text("CREATE TABLE notebooks (id TEXT PRIMARY KEY, published TEXT)"))
-            await conn.execute(
-                text("INSERT INTO notebooks (id, published) VALUES ('old', 'preserved')")
-            )
-        await db.initialize()
-        await db.initialize()
-        async with engine.connect() as conn:
-            row = (
-                await conn.execute(text("SELECT published, published_html FROM notebooks"))
-            ).one()
-            assert tuple(row) == ("preserved", None)
-    finally:
-        await engine.dispose()
 
 
 def test_legacy_backfill_cannot_overwrite_a_new_publication(client, monkeypatch):

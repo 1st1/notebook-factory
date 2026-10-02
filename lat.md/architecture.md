@@ -1,12 +1,12 @@
 # Notebook Factory
 
-A public Python notebook library with GitHub sign-in, per-user ownership, read-only community browsing, and notebook forks. React and FastAPI run as Vercel Services; temporary JupyterLab environments run in Vercel Sandbox.
+A public Python notebook library with Vercel sign-in, per-user ownership, read-only community browsing, and notebook forks. React and FastAPI run as Vercel Services; temporary JupyterLab environments run in Vercel Sandbox.
 
 ## Overall architecture on Vercel
 
 Vercel hosts the web and API services, isolates Python execution in Sandbox, serves published artifacts through Blob, and routes model requests through AI Gateway. Neon Postgres holds durable application state.
 
-The application and publication path uses two services in one Vercel deployment. API calls share the app origin; published HTML is fetched directly from Blob. GitHub OAuth enrolls users through the API; each notebook has one owner.
+The application and publication path uses two services in one Vercel deployment. API calls share the app origin; published HTML is fetched directly from Blob. Vercel OIDC enrolls users through the API; each notebook has one owner.
 
 ```mermaid
 flowchart TB
@@ -61,7 +61,7 @@ The two FastAPI nodes represent the same backend service. The dependency drive c
 Public reading, private editing, and AI assistance share the API and database, while notebook execution and artifact delivery use separate Vercel services.
 
 1. **Read:** the browser loads the React app and public notebook metadata, then fetches published HTML directly from Blob into a sandboxed iframe. The API render endpoint supplies a fallback; public viewing does not start a Sandbox or execute cells.
-2. **Edit:** GitHub OAuth establishes the owner session. The API acquires a database lease and opens or reuses a Sandbox. The editor iframe connects directly to JupyterLab, including kernel WebSockets. The browser exports its live document through the bridge and sends autosaved documents to the API for Postgres persistence and automatic publication.
+2. **Edit:** Vercel OIDC establishes the owner session. The API acquires a database lease and opens or reuses a Sandbox. The editor iframe connects directly to JupyterLab, including kernel WebSockets. The browser exports its live document through the bridge and sends autosaved documents to the API for Postgres persistence and automatic publication.
 3. **Publish:** autosaves persist the source first, then render and upload only changed documents to Blob. Source, fallback HTML, artifact URL, and revision switch together. Publication does not close the editor or deploy the app.
 4. **Assist:** the browser sends an authenticated chat turn to FastAPI, which streams inference through AI Gateway. Notebook tool calls return to the browser and act on the live Jupyter document; rename calls the authenticated API. Read-only community chat history is saved separately in Postgres.
 
@@ -109,7 +109,7 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 | `chat_history`, `chat_revision` | Publicly readable conversation with owner-only writes and optimistic concurrency counter |
 | `claim`, `claim_until` | Atomic operation lease shared across function instances |
 
-[[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. Initialization adds missing publication/chat fields, creates users, reserves the original account, and assigns existing notebooks to owner slot 1 with a foreign key and owner index. This targeted upgrade is not a general migration framework. Postgres retains up to two idle connections with three overflow connections, pre-ping checks, and five-minute recycling to avoid repeating connection setup on every request. SQLite tests use NullPool. Application shutdown disposes the pool.
+[[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. It targets a fresh database, with no reserved users or legacy GitHub migrations. Postgres retains up to two idle connections with three overflow connections, pre-ping checks, and five-minute recycling to avoid repeating connection setup on every request. SQLite tests use NullPool. Application shutdown disposes the pool.
 
 [[backend/config.py]] normalizes conventional Postgres URLs for asyncpg, maps `sslmode` to `ssl`, and removes libpq's `channel_binding` option. Deployment startup rejects missing or non-Postgres database configuration.
 
@@ -125,11 +125,11 @@ The rendered iframe and API response both enforce sandboxing. The CSP blocks net
 
 ## Authentication
 
-[[backend/auth.py]] uses GitHub OAuth and signed, expiring cookies. [[backend/auth.py#require_user]] admits signed-in GitHub users; [[backend/auth.py#require_owner]] additionally checks notebook ownership on every notebook mutation. Both require the exact application Origin.
+[[backend/auth.py]] uses Vercel OIDC and signed, expiring cookies. [[backend/auth.py#require_user]] admits signed-in Vercel users; [[backend/auth.py#require_owner]] additionally checks notebook ownership on every notebook mutation. Both require the exact application Origin.
 
-OAuth requests `read:user`. A signed state cookie expires after ten minutes; the signed session expires after seven days. Cookies are HttpOnly, SameSite=Lax, and Secure on HTTPS. The access token is used to fetch identity, not persisted in the session. The session retains GitHub’s avatar URL for the sidebar; older sessions derive the avatar URL from the stored account ID without requiring a new login. The sidebar falls back to the login initial if the image is missing or fails to load.
+Sign-in requests only openid/profile scopes. Authorization code exchange uses PKCE S256 and a client secret. [[backend/auth.py#verify_identity]] validates RS256 signatures against Vercel’s fixed JWKS endpoint, issuer, audience, expiry, nonce, and authorized party. A signed flow cookie expires after ten minutes; the signed session contains only provider and subject and expires after seven days. Cookies are HttpOnly, SameSite=Lax, and Secure on HTTPS. Provider tokens are never persisted. The verified profile supplies username and avatar, with an initial fallback when no image loads.
 
-Ownership uses the registered user slot bound to a unique numeric GitHub ID. Username changes update display identity without changing ownership or the stored Sandbox name. The frontend hides editing controls for other users, while the backend rejects cross-owner calls even with a valid editor token. There is no development authentication bypass.
+Ownership uses the registered user slot bound to a unique Vercel subject ID. Username changes update display identity without changing ownership or the stored Sandbox name. The frontend hides editing controls for other users, while the backend rejects cross-owner calls even with a valid editor token. There is no development authentication bypass.
 
 Public notebook metadata excludes drafts, editor capabilities, and leases. Responses use no-store caching and no-referrer headers. Logout requires the configured Origin, and the UI disables logout while an editor is open.
 
@@ -207,9 +207,9 @@ Owner deletion removes public reads and sidebar metadata, schedules Sandbox and 
 
 [[backend/accounts.py#enroll]] admits at most 300 users, while the users table independently enforces an absolute 500-row ceiling. Existing registered users can sign in at capacity.
 
-Postgres enrollment uses a transaction advisory lock around identity lookup, capacity check, and slot allocation. The table has a unique primary-key slot constrained to 1–500, making a 501st row impossible even for direct SQL inserts. GitHub IDs and display logins are unique. Slot 1 is reserved for the legacy 1st1 workspace and can be claimed only by its verified OAuth identity. Existing signed sessions enroll through the same path.
+Postgres enrollment uses a transaction advisory lock around identity lookup, capacity check, and slot allocation. The table has a unique primary-key slot constrained to 1–500, making a 501st row impossible even for direct SQL inserts. Vercel subject IDs and display logins are unique. Username collisions receive a deterministic subject-derived suffix and never claim another account.
 
-[[backend/db.py#initialize]] migrates existing notebook ownership to slot 1. User Sandbox names are generated from the enrollment username and an app/slot hash, then stored immutably so GitHub renames do not create a second runtime.
+[[backend/db.py#initialize]] creates an empty schema. User Sandbox names are generated from the enrollment username and an app/slot hash, then stored immutably so username changes do not create a second runtime.
 
 ## Community navigation and forks
 
@@ -219,6 +219,10 @@ Other users' notebooks and saved conversations are read-only, including for anon
 
 ## Multi-user isolation tests
 
-[[backend/tests/test_accounts.py]] covers concurrent enrollment at capacity, hard database limits, stable GitHub identity, and migration of legacy ownership. API tests deny every cross-owner mutation and verify forks never copy chat, editor tokens, or private drafts.
+[[backend/tests/test_accounts.py]] covers concurrent enrollment at capacity, hard database limits, stable Vercel identity, username collisions, and empty initial databases. API tests deny every cross-owner mutation and verify forks never copy chat, editor tokens, or private drafts.
 
 Runtime tests prove two notebooks owned by one user share a VM while a second user gets another VM. Browser checks verify default group expansion and ordering for both the original account and a different logged-in user, read-only chat/controls, and fork ownership with an empty conversation.
+
+## Vercel sign-in tests
+
+[[backend/tests/test_auth.py]] checks PKCE exchange and signed sessions, rejects invalid signature/issuer/audience/nonce/expiry, rejects old GitHub cookies, and proves failed state or denied consent never exchanges a code.

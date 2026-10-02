@@ -609,7 +609,7 @@ function App() {
               </span>
               <span>
                 <strong>{auth.user.login}</strong>
-                <small>{"Signed in with GitHub"}</small>
+                <small>{"Signed in with Vercel"}</small>
               </span>
               <form action="/api/auth/logout" method="post">
                 <button
@@ -623,7 +623,7 @@ function App() {
             </div>
           ) : (
             <a className="login" href="/api/auth/login">
-              <Github size={17} /> Sign in with GitHub{" "}
+              <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 24 23H0Z" fill="currentColor" /></svg> Sign in with Vercel{" "}
               <ArrowUpRight size={15} />
             </a>
           )}

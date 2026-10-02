@@ -107,27 +107,3 @@ async def test_different_users_have_separate_runtime_leases_and_documents(monkey
     assert create_mock.await_count == 2
     assert instances[a['name']].fs.write_text.await_count == 2
     assert instances[b['name']].fs.write_text.await_count == 1
-
-
-async def test_original_owner_retires_legacy_runtime_once(monkeypatch):
-    import hashlib
-
-    await db.initialize()
-    key = 'nf-legacy-migration-test'
-    owner = {'id': 1, 'sandbox_name': key}
-    monkeypatch.setattr(editor, 'session', api_session)
-    instance = SimpleNamespace(fs=SimpleNamespace(write_text=AsyncMock()), current_session=None)
-    monkeypatch.setattr(editor.sandbox, 'get_sandbox', AsyncMock(return_value=instance))
-    monkeypatch.setattr(editor, '_alive', AsyncMock(return_value=True))
-    stopped = []
-    async def destroy(current):
-        stopped.append(current['name'])
-    monkeypatch.setattr(editor, '_destroy_runtime', destroy)
-    legacy = 'nf-shared-' + hashlib.sha256(editor.APP_URL.encode()).hexdigest()[:24]
-    async def create(owner, report):
-        assert legacy in stopped
-        return {'name': key, 'base_url': 'https://example.test/cap', 'generation': editor.generation()}
-    monkeypatch.setattr(editor, '_start_runtime', create)
-    await editor.start('one', notebook_id='original-a', owner=owner)
-    await editor.start('two', notebook_id='original-b', owner=owner)
-    assert stopped.count(legacy) == 1

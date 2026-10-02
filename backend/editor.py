@@ -50,7 +50,7 @@ async def _start_runtime(owner, report=lambda kind, message: None):
         environment = prepared()
         report("progress", "Attaching your notebook workspace…")
         drive = await sandbox.get_or_create_drive(
-            name=workspace_drive_name("shared:" + APP_URL if owner["id"] == 1 else "user:" + name), region=environment["region"],
+            name=workspace_drive_name("user:" + name), region=environment["region"],
             max_size_bytes=4 * 1024**3,
         )
         for attempt in range(30):
@@ -215,13 +215,6 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
     async with runtime_lease(key) as claim, session():
         report("progress", "Connecting to the shared Python runtime…")
         current = await load_runtime(key)
-        if owner["id"] == 1 and not (current or {}).get("legacy_retired"):
-            # Retire the pre-multi-user VM before starting the original owner's VM.
-            legacy_key = "nf-shared-" + hashlib.sha256(APP_URL.encode()).hexdigest()[:24]
-            await _destroy_runtime({"name": legacy_key})
-            if current:
-                current["legacy_retired"] = True
-                await store_runtime(key, claim, current)
         pending = (current or {}).get("pending_deletions", [])
         if current and current.get("generation") == generation() and await _alive(current):
             instance = await sandbox.get_sandbox(name=current["name"])
@@ -231,7 +224,6 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
             await _destroy_runtime({"name": key})
             current = await _start_runtime(owner, report)
             current["pending_deletions"] = pending
-            current["legacy_retired"] = True
             await store_runtime(key, claim, current)
             instance = await sandbox.get_sandbox(name=current["name"])
         for folder_to_delete in pending:
@@ -330,18 +322,6 @@ async def delete_workspace(notebook_id: str, *, owner):
             await instance.fs.remove(folder, recursive=True, missing_ok=True)
             current["pending_deletions"].remove(folder)
             await store_runtime(key, claim, current)
-    # Clean up a drive from the previous one-VM-per-notebook implementation, if present.
-    async with session():
-        for attempt in range(30):
-            try:
-                await sandbox.delete_drive(name=workspace_drive_name(notebook_id))
-                return
-            except sandbox.SandboxApiError as error:
-                if error.status_code == 404:
-                    return
-                if error.status_code != 409 or attempt == 29:
-                    raise
-                await anyio.sleep(1)
 
 
 async def keep_alive(editor: dict):

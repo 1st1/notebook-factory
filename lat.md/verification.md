@@ -31,7 +31,7 @@ The frontend has been smoke-tested with Playwright and temporary mock services. 
 
 Checks exercised incremental and split stream frames, logs visible before setup completes, elapsed time, ready/error transitions, editor handoff, and close behavior. Earlier close checks verified iframe removal during shutdown and restoration after a failed close.
 
-A mocked browser run does not prove Vercel's deployed streaming behavior or GitHub authentication. The frontend build checks TypeScript and bundling, not runtime behavior against live infrastructure.
+A mocked browser run does not prove Vercel's deployed streaming behavior or Vercel authentication. The frontend build checks TypeScript and bundling, not runtime behavior against live infrastructure.
 
 ## Live checks
 
@@ -40,7 +40,7 @@ Live Sandbox smoke checks verified SDK provisioning, incremental installer outpu
 Use an owner session and a disposable notebook to check a deployment end to end:
 
 1. Confirm public navigation and `/api/health`; confirm notebook listing separately to exercise Postgres.
-2. Sign in through GitHub as 1st1 and create a notebook.
+2. Sign in through Vercel and create a notebook.
 3. Open Edit; confirm setup stages and installation output appear before readiness.
 4. Execute a Python cell and verify its output, not merely that the Jupyter page loaded.
 5. Save or wait for autosave; verify signed-out readers still see the previous published version.

@@ -1,7 +1,6 @@
 import time
 
 from sqlalchemy import (
-    BigInteger,
     CheckConstraint,
     Column,
     ForeignKey,
@@ -10,8 +9,6 @@ from sqlalchemy import (
     String,
     Table,
     Text,
-    inspect,
-    select,
     text,
 )
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -31,7 +28,7 @@ metadata = MetaData()
 users = Table(
     "users", metadata,
     Column("id", Integer, primary_key=True, autoincrement=False),
-    Column("github_id", BigInteger, unique=True),
+    Column("vercel_id", String, nullable=False, unique=True),
     Column("login", String, nullable=False, unique=True),
     Column("avatar_url", Text),
     Column("sandbox_name", String, nullable=False, unique=True),
@@ -43,7 +40,7 @@ notebooks = Table(
     "notebooks",
     metadata,
     Column("id", String, primary_key=True),
-    Column("owner_id", Integer, ForeignKey("users.id"), nullable=False, server_default="1"),
+    Column("owner_id", Integer, ForeignKey("users.id"), nullable=False),
     Column("title", String, nullable=False),
     Column("source", Text, nullable=False),
     Column("published", Text, nullable=False),
@@ -74,30 +71,7 @@ async def initialize():
         if conn.dialect.name == "postgresql":
             await conn.execute(text("SELECT pg_advisory_xact_lock(734823109)"))
         await conn.run_sync(metadata.create_all)
-        # Reserve the original workspace for its verified GitHub account.
-        if await conn.scalar(select(users.c.id).where(users.c.id == 1)) is None:
-            from accounts import sandbox_name
-            await conn.execute(users.insert().values(
-                id=1, login="1st1", sandbox_name=sandbox_name("1st1", 1), created_at=timestamp(),
-            ))
-
-        columns = await conn.run_sync(
-            lambda sync: {column["name"] for column in inspect(sync).get_columns("notebooks")}
-        )
-        if "owner_id" not in columns:
-            await conn.execute(text(
-                "ALTER TABLE notebooks ADD COLUMN owner_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id)"
-            ))
-        for column in ("published_html", "render_url", "chat_history"):
-            if column not in columns:
-                await conn.execute(text(f"ALTER TABLE notebooks ADD COLUMN {column} TEXT"))
-
         await conn.execute(text("CREATE INDEX IF NOT EXISTS notebooks_owner_id_idx ON notebooks(owner_id)"))
-
-        if "chat_revision" not in columns:
-            await conn.execute(
-                text("ALTER TABLE notebooks ADD COLUMN chat_revision INTEGER NOT NULL DEFAULT 0")
-            )
 
 
 def timestamp():

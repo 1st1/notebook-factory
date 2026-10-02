@@ -44,7 +44,7 @@ async def test_editor_restores_dependencies_and_injects_current_document(monkeyp
     monkeypatch.setattr(editor.httpx, "AsyncClient", http_client)
     result = await editor._start_runtime({"id": owner_id, "sandbox_name": "nf-user-test"})
     assert create.call_args.kwargs["name"] == "nf-user-test"
-    assert editor.sandbox.get_or_create_drive.call_args.kwargs["name"] == editor.workspace_drive_name("shared:" + editor.APP_URL if owner_id == 1 else "user:nf-user-test")
+    assert editor.sandbox.get_or_create_drive.call_args.kwargs["name"] == editor.workspace_drive_name("user:nf-user-test")
     assert "source" not in create.call_args.kwargs
     assert create.call_args.kwargs["mounts"]["/vercel"] is drive
     assert create.call_args.kwargs["mounts"]["/notebook-base"].mode == "snapshot"

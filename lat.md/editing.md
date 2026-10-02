@@ -10,7 +10,7 @@ A notebook's durable document lives in Postgres. JupyterLab provides temporary e
 
 The runtime mounts its user’s writable workspace drive at `/vercel` and the dependency drive read-only at `/notebook-base`. A new VM starts with a 15-minute execution limit. Active editor heartbeats renew a roughly 10–15 minute remaining lifetime, without adding time independently for every tab. It does not run forever: platform session limits still apply. After expiry a new VM attaches the durable workspace and starts Jupyter again; kernel memory is lost.
 
-Editor Sandboxes use `persistent=False`, so stop does not snapshot them. Postgres remains authoritative for notebook documents. Opening writes a fresh session-specific file under the notebook's directory; stale tabs cannot overwrite a replacement session's file. The original account retains its legacy shared workspace drive. Its old app-wide VM is retired before opening the per-user VM. Legacy per-notebook drives remain retained, but their extra packages and side files are not imported automatically.
+Editor Sandboxes use `persistent=False`, so stop does not snapshot them. Postgres remains authoritative for notebook documents. Opening writes a fresh session-specific file under the notebook's directory; stale tabs cannot overwrite a replacement session's file. Every account receives its own writable workspace drive; no legacy drives or runtimes are imported.
 
 Users and the assistant can run `%pip install numpy matplotlib` in a code cell to install packages into the active kernel environment. The assistant prompt recommends this notebook-native syntax.
 

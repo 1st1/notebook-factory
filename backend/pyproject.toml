@@ -16,6 +16,7 @@ dependencies = [
   "python-dotenv>=1,<2",
   "vercel>=0.5,<1",
   "ai[vercel]>=0.8,<0.9",
+  "pyjwt[crypto]>=2.10,<3",
 ]
 [dependency-groups]
 dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.12"]

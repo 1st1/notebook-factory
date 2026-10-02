@@ -14,7 +14,7 @@ The configured production application is [notebook-factory-green.vercel.app](htt
 | Project ID | `prj_6Q4NWdJ0w3VHaXshi9MoWKwhdPhP` |
 | Team ID | `team_7scPglQEOz4JjqD4f08fLr7z` |
 | Database | Connected Neon Marketplace integration |
-| User enrollment | Any GitHub account, up to 300 admitted users; legacy notebooks belong to `1st1` |
+| User enrollment | Any Vercel account, up to 300 admitted users |
 
 These are the project details verified during setup on October 1, 2026. Local linkage lives in the ignored `.vercel/project.json`. Production has been deployed directly from the working tree with the CLI; a successful deployment does not imply those changes have been committed or pushed.
 
@@ -32,18 +32,18 @@ The production alias is public. Unique deployment URLs have Vercel deployment pr
 | `BLOB_READ_WRITE_TOKEN` | Backend upload credential for the public rendered-notebook Blob store |
 | `SESSION_SECRET` | Random signing secret, at least 32 characters in deployment |
 | `DATABASE_URL` | Neon/Postgres connection URL with TLS options |
-| `GITHUB_CLIENT_ID` | OAuth application client ID |
-| `GITHUB_CLIENT_SECRET` | OAuth application secret |
+| `VERCEL_APP_CLIENT_ID` | OAuth application client ID |
+| `VERCEL_APP_CLIENT_SECRET` | OAuth application secret |
 | `VERCEL_OIDC_TOKEN` | Request-scoped Sandbox identity in deployment, or an explicitly loaded local token |
 | `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID` | Alternative backend-only Sandbox credentials for local use |
 
-The production GitHub OAuth homepage is the canonical app origin; its callback is `https://notebook-factory-green.vercel.app/api/auth/callback`. Origin checks and iframe configuration also depend on the same APP_URL. Preview editing requires a matching origin, OAuth configuration, and environment scope.
+Register the canonical APP_URL plus `/api/auth/callback` as the Sign in with Vercel callback. Origin checks and iframe configuration also depend on the same APP_URL. Preview editing requires a matching origin, OAuth configuration, and environment scope.
 
 [[backend/main.py#headers]] installs the incoming request headers in the Vercel HeadersContext so the SDK can use deployment OIDC. The project needs Sandbox access and OIDC support. No static Vercel token is required in the deployed app.
 
 The backend loads `backend/.env`; it does not automatically load a root `.env.local` produced by CLI environment commands. Load or export that file explicitly when using its credentials locally. Never put backend secrets in `VITE_*` variables, which are client-visible.
 
-Marketplace connection supplies the database variables. The application reads DATABASE_URL, not the other provider-specific aliases. Required environment changes take effect in a new deployment. Startup creates missing tables and adds the published HTML column to existing tables. Existing publications backfill HTML on first read. Other future schema changes need an explicit migration strategy.
+Marketplace connection supplies the database variables. The application reads DATABASE_URL, not the other provider-specific aliases. Required environment changes take effect in a new deployment. Startup creates the schema in a fresh database. It does not migrate the old GitHub schema; use a new DATABASE_URL. Future schema changes need an explicit migration strategy.
 
 ## Local development
 
@@ -57,7 +57,7 @@ uv sync --project backend
 npm ci --prefix frontend
 ```
 
-Configure a local GitHub OAuth application with callback `http://localhost:5173/api/auth/callback`, then run these in separate terminals:
+Configure a Sign in with Vercel application with callback `http://localhost:5173/api/auth/callback`, then run these in separate terminals:
 
 ```sh
 cd backend
@@ -139,8 +139,10 @@ The deploy helper runs `uv run --project backend python scripts/prepare_sandbox.
 Update [direct dependencies](../backend/assets/sandbox-requirements.in), then regenerate [the lock](../backend/assets/sandbox-requirements.lock) with `uv pip compile backend/assets/sandbox-requirements.in --python-version 3.13 --python-platform x86_64-manylinux_2_28 --output-file backend/assets/sandbox-requirements.lock` before preparation. No local Docker engine is required.
 
 
-## Multi-user migration
+## Vercel sign-in setup
 
-Startup creates the bounded users table and adds notebook ownership under the existing migration lock. Legacy notebooks remain assigned to the original account; no manual SQL migration is required.
+This implementation requires a fresh database and a Sign in with Vercel application. The existing project linkage above has not been moved to Vercel Internal Playground.
 
-Signup enrollment is capped at 300 including the reserved original account. The database primary-key range separately caps users at 500. Runtime names and writable drives are user-scoped; the original account keeps its existing workspace drive. Saved chats become publicly readable while chat writes and all editor operations require notebook ownership. Deploy the frontend and backend together.
+In the target team's Settings → Apps, create an app with Sign-In Access set to **Anyone with a Vercel account**. Enable openid/profile scopes, select client_secret_post authentication, and register the exact APP_URL plus `/api/auth/callback`. Store the client ID and secret in VERCEL_APP_CLIENT_ID and VERCEL_APP_CLIENT_SECRET. Local development can register `http://localhost:5173/api/auth/callback` as well. See [Vercel app configuration](https://vercel.com/docs/sign-in-with-vercel/manage-from-dashboard).
+
+Use a new Neon database and SESSION_SECRET for the new deployment. No old accounts, notebooks, or GitHub sessions are imported. Startup creates empty tables, enrollment admits the first 300 users, and the database independently caps users at 500. Runtime names and writable drives are user-scoped. Saved notebooks and chats remain publicly readable; mutations require ownership. Deploy frontend and backend together. This application login is separate from Vercel deployment protection.
