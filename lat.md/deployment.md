@@ -132,9 +132,11 @@ When changing the preparation script, run `uv run scripts/prepare_fonts.py` with
 
 ## Preparing dependency drives
 
-The deploy helper runs `uv run --project backend python scripts/prepare_sandbox.py` after preparing fonts. Vercel credentials must access the linked project; local execution can load its OIDC credentials from `.env.local`.
+The deploy helper runs `uv run --project backend python scripts/prepare_sandbox.py` after preparing fonts. Vercel credentials must access the linked project; local execution can use its scoped OIDC credentials.
 
-[[scripts/prepare_sandbox.py#prepare]] validates the committed dependency drive or builds and verifies a replacement before deployment. Commit [backend/assets/sandbox-environment.json](../backend/assets/sandbox-environment.json) after rebuilding. Git-based deployments use this manifest directly. Keep previous dependency drives while deployments referencing them are retained. A missing pinned drive fails preparation explicitly; remove its stale manifest and rerun preparation to rebuild. Retired drives and legacy Sandbox snapshots can be removed through Vercel separately.
+Dependency drives are project-local: preparation rebuilds when the manifest names a drive missing from the current project, including after a team move.
+
+[[scripts/prepare_sandbox.py#prepare]] validates the committed dependency drive or builds and verifies a replacement before deployment. Commit [backend/assets/sandbox-environment.json](../backend/assets/sandbox-environment.json) after rebuilding. Git-based deployments use this manifest directly. Keep previous dependency drives while deployments referencing them are retained. A missing pinned drive triggers a rebuild in the authenticated project. Retired drives and legacy Sandbox snapshots can be removed through Vercel separately.
 
 Update [direct dependencies](../backend/assets/sandbox-requirements.in), then regenerate [the lock](../backend/assets/sandbox-requirements.lock) with `uv pip compile backend/assets/sandbox-requirements.in --python-version 3.13 --python-platform x86_64-manylinux_2_28 --output-file backend/assets/sandbox-requirements.lock` before preparation. No local Docker engine is required.
 

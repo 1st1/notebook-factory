@@ -26,7 +26,7 @@ async def prepare():
                 if drive.name == existing["drive_name"]:
                     print("Sandbox dependencies unchanged; reusing prepared drive.")
                     return
-            raise RuntimeError("Prepared drive is missing. Remove the stale manifest and rebuild.")
+            print("Prepared drive is absent in this project; building a project-local environment.", flush=True)
         # Unique names keep concurrent builders and previous deployments isolated.
         drive = await sandbox.get_or_create_drive(
             name="nf-deps-" + fingerprint[:12] + "-" + secrets.token_hex(4),
