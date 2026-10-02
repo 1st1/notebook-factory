@@ -3,6 +3,7 @@
 const http=require('http'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 let holdClose=false,holdStart=false,heldStart,closeSource,starts=[],expiredIds=new Set(),saves=[],boots={},histories=new Map(),messagesSeen=[];
+let authProfile={login:'1st1',user_id:1};
 let releaseBackground;
 let holdHistory=true;const historyWaiters=[];
 const notebooks=['one','two','three'].map(id=>({id,title:'Notebook '+id,owner_id:1,revision:1,updated_at:1}));
@@ -15,7 +16,7 @@ const server=http.createServer(async(req,res)=>{
  res.setHeader('Content-Type','application/json');const id=u.pathname.split('/')[3];
  if(u.pathname==='/api/users')return res.end(JSON.stringify(workspaceUsers));
  if(u.pathname==='/api/notebooks')return res.end(JSON.stringify(notebooks));
- if(u.pathname==='/api/auth/me')return res.end(JSON.stringify({can_edit:true,user:{login:'1st1',user_id:1},configured:true}));
+ if(u.pathname==='/api/auth/me')return res.end(JSON.stringify({can_edit:true,user:authProfile,configured:true}));
  if(u.pathname.endsWith('/chat-history')){const v=histories.get(id)||{messages:[],revision:0};if(req.method==='PUT'){histories.set(id,{messages:body.messages,revision:body.revision+1});return res.end(JSON.stringify({revision:body.revision+1}));}if(holdHistory){historyWaiters.push(()=>res.end(JSON.stringify(v)));return;}return res.end(JSON.stringify(v));}
  if(u.pathname.endsWith('/editor')){starts.push(id);const send=()=>res.end('data: '+JSON.stringify({type:'ready',editor:{name:'test',token:id+'-'+starts.length,url:'http://127.0.0.1:5187/editor-frame?id='+id}})+'\n\n');if(holdStart){res.write('data: '+JSON.stringify({type:'progress',message:'Preparing test environment…'})+'\n\n');res.write('data: '+JSON.stringify({type:'log',message:'Retained setup log'})+'\n\n');heldStart=send;return;}return send();}
  if(u.pathname.endsWith('/editor-status')){res.statusCode=expiredIds.has(id)?410:200;return res.end('{}');}
@@ -114,6 +115,14 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  await page.getByRole('textbox',{name:'Message'}).waitFor();
  assert.equal(await page.getByText('Public conversation from another user.',{exact:true}).isVisible(),false,'fork does not copy chat');
  assert.equal(notebooks.find(n=>n.id==='forked').owner_id,1);
+ authProfile={login:'amy',user_id:2};
+ const amyPage=await browser.newPage();await amyPage.goto('http://127.0.0.1:5187/?notebook=other');
+ await amyPage.getByRole('textbox',{name:'Message'}).waitFor();
+ assert.deepEqual(await amyPage.locator('.owner-toggle strong').allTextContents(),['amy','1st1','zara'],'logged-in user is first, not a fixed account');
+ assert.equal(await amyPage.locator('.owner-toggle').filter({hasText:'amy'}).getAttribute('aria-expanded'),'true');
+ assert.equal(await amyPage.locator('.owner-toggle').filter({hasText:'1st1'}).getAttribute('aria-expanded'),'false');
+ assert(await amyPage.getByRole('button',{name:'Edit notebook',exact:true}).isVisible());
+ await amyPage.close();
  if(process.env.SCREENSHOT_PATH)await page.screenshot({path:process.env.SCREENSHOT_PATH});
  console.log('PASS: automatic saved-chat opening and manual dismissal, nonblocking history loads, view chat and consent, read-only navigation, retained iframe state across notebooks and welcome, multiple live dots, disconnected dot removal, active recovery');
 

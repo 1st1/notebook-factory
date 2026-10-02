@@ -221,4 +221,4 @@ Other users' notebooks and saved conversations are read-only, including for anon
 
 [[backend/tests/test_accounts.py]] covers concurrent enrollment at capacity, hard database limits, stable GitHub identity, and migration of legacy ownership. API tests deny every cross-owner mutation and verify forks never copy chat, editor tokens, or private drafts.
 
-Runtime tests prove two notebooks owned by one user share a VM while a second user gets another VM. Browser checks verify default group expansion, alphabetical ordering, read-only chat/controls, and fork ownership with an empty conversation.
+Runtime tests prove two notebooks owned by one user share a VM while a second user gets another VM. Browser checks verify default group expansion and ordering for both the original account and a different logged-in user, read-only chat/controls, and fork ownership with an empty conversation.
