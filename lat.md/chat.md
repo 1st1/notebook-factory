@@ -8,7 +8,7 @@ The editor's Chat button opens a right sidebar where the assistant can read, edi
 
 [[backend/chat.py]] streams through Vercel AI Gateway with four browser-executed notebook tools. The model never receives Sandbox credentials or a general server-side execution tool.
 
-The default model is Claude Sonnet 4.6, configurable with AI_MODEL. Deployment uses Vercel OIDC; local development can load VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY. Gateway access and credits are required. A free-tier model rejection displays an explicit instruction to add paid Gateway credits. Notebook sources and text outputs are sent to the model when it reads the document.
+The default model is Claude Sonnet 4.6, configurable with AI_MODEL. Medium reasoning effort enables provider reasoning output; the UI streams it in an expandable Thoughts section, open while streaming and collapsed afterward. A spinner accompanies waiting and tool-execution status. Deployment uses Vercel OIDC; local development can load VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY. Gateway access and credits are required. A free-tier model rejection displays an explicit instruction to add paid Gateway credits. Notebook sources and text outputs are sent to the model when it reads the document.
 
 The Python 0.8 UI adapter dispatches completed client tool inputs through an empty ToolCallResult event. Continuations preserve the existing assistant UI message ID to prevent duplicated tool history. Empty argument strings are normalized to JSON objects. Requests have a 1 MB history limit and 160-message limit; the browser bounds automatic work to 24 tool calls per user message.
 

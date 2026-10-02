@@ -730,3 +730,9 @@ main > .error > button { flex-shrink: 0; }
 @media (min-width: 1500px) { main > .error { margin-inline: 70px; } }
 @media (max-width: 1000px) { main > .error { margin-inline: 26px; } }
 @media (max-width: 650px) { main > .error { margin-inline: 12px; gap: 8px; padding: 10px; font-size: 11px; } }
+
+.chat-status { display: flex; align-items: center; gap: 8px; }
+.chat-status svg { flex-shrink: 0; }
+
+.chat-reasoning { margin: 8px 0; padding-left: 10px; border-left: 2px solid #d5dccd; color: #79836f; font-size: 12px; }
+.chat-reasoning summary { cursor: pointer; user-select: none; }

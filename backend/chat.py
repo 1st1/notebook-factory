@@ -74,7 +74,12 @@ Changes are private drafts; only the user can Save & exit to publish or Exit to 
 async def stream(messages, message_id=None):
     try:
         model = ai.get_model(os.getenv("AI_MODEL", "gateway:anthropic/claude-sonnet-4.6"))
-        async with ai.stream(model, [ai.system_message(SYSTEM), *messages], tools=TOOLS) as result:
+        async with ai.stream(
+            model,
+            [ai.system_message(SYSTEM), *messages],
+            tools=TOOLS,
+            params=ai.InferenceRequestParams(reasoning=ai.ReasoningParams(effort="medium")),
+        ) as result:
             # The 0.8 adapter exposes function inputs on ToolCallResult, not ToolEnd.
             # Empty results dispatch client tools without pretending to execute them.
             async def client_events():

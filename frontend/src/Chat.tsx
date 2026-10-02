@@ -6,7 +6,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import Markdown from "react-markdown";
-import { Send, Square, X, RotateCcw } from "lucide-react";
+import { Send, Square, X, RotateCcw, LoaderCircle } from "lucide-react";
 
 export function Chat({
   notebookId,
@@ -184,6 +184,11 @@ export function Chat({
             {message.parts.map((part, index) =>
               part.type === "text" ? (
                 <Markdown key={index}>{part.text}</Markdown>
+              ) : part.type === "reasoning" ? (
+                <details className="chat-reasoning" key={index} open={part.state === "streaming"}>
+                  <summary>{part.state === "streaming" ? "Thinking…" : "Thoughts"}</summary>
+                  <Markdown>{part.text}</Markdown>
+                </details>
               ) : part.type.startsWith("tool-") ||
                 part.type === "dynamic-tool" ? (
                 <div className="chat-tool" key={index}>
@@ -206,7 +211,8 @@ export function Chat({
           </div>
         ))}
         {busy && (
-          <p className="chat-hint">
+          <p className="chat-hint chat-status" role="status">
+            <LoaderCircle size={14} className="spin" aria-hidden="true" />
             {pending ? "Working in Jupyter…" : "Thinking…"}
           </p>
         )}
