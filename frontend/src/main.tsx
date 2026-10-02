@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import {
   ArrowUpRight,
   BookOpen,
-  Check,
   ChevronDown,
   ChevronRight,
   GitFork,
@@ -584,7 +583,7 @@ function App() {
               : location.assign("/api/auth/login")
           }
         >
-          <Plus size={17} /> New notebook <span>+</span>
+          <Plus size={17} /> New notebook
         </button>
         <div className="search">
           <Search size={15} />
@@ -594,7 +593,6 @@ function App() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <span>/</span>
         </div>
         <div className="list-label">
           NOTEBOOKS
@@ -727,7 +725,7 @@ function App() {
                 </div>
               </div>
               <div className="metadata">
-                <span className="python-dot" /> Python 3 <span>·</span> Updated{" "}
+                Updated{" "}
                 {date}
                 <span>·</span>
                 {activeEditor
@@ -805,15 +803,7 @@ function App() {
                   <span className={activeEditor ? "green-dot" : "gray-dot"} />
                   {activeEditor ? "JUPYTER LAB" : "NOTEBOOK"}
                 </span>
-                <span>
-                  {activeEditor ? (
-                    "Changes save automatically"
-                  ) : (
-                    <>
-                      <Check size={13} /> Published
-                    </>
-                  )}
-                </span>
+                {activeEditor && <span>Changes save automatically</span>}
               </div>
               {Object.values(editors).map(current => <iframe
                 key={current.token} ref={node => {
@@ -854,6 +844,10 @@ function App() {
         >
           <form
             className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-notebook-title"
+            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setCreating(false); } }}
             onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => {
               e.preventDefault();
@@ -868,7 +862,7 @@ function App() {
             }}
           >
             <div className="eyebrow">SOMETHING NEW</div>
-            <h2>Give your idea a name.</h2>
+            <h2 id="create-notebook-title">Give your idea a name.</h2>
             <label htmlFor="title">Notebook title</label>
             <input
               id="title"

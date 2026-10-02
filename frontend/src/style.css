@@ -128,7 +128,8 @@ svg {
 .new-button {
   margin-top: 28px;
   border: 1px solid #d8dcd0;
-  background: #fdfef9;
+  background: #405033;
+  color: #fff;
   width: 100%;
   display: flex;
   align-items: center;
@@ -138,21 +139,16 @@ svg {
   font-weight: 550;
   box-shadow: 0 2px 2px #22222203;
 }
-.new-button > span {
-  margin-left: auto;
-  color: #999e92;
-  font-size: 12px;
-  border: 1px solid #e1e5d9;
-  border-radius: 3px;
-  width: 17px;
-  height: 17px;
-}
 .search {
   display: flex;
   align-items: center;
   gap: 8px;
   color: #8e9388;
-  padding: 23px 4px 25px;
+  margin: 14px 0 18px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #d8dcd0;
+  border-radius: 6px;
 }
 .search input {
   width: 100%;
@@ -165,12 +161,6 @@ svg {
 }
 .search input::placeholder {
   color: #96998e;
-}
-.search > span {
-  border: 1px solid #dde0d7;
-  border-radius: 3px;
-  font-size: 11px;
-  padding: 0 4px;
 }
 .list-label {
   display: flex;
