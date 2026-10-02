@@ -247,7 +247,7 @@
           var widget = notebookWidget(window.jupyterapp);
           var kernel = widget && widget.sessionContext && widget.sessionContext.session && widget.sessionContext.session.kernel;
           event.source.postMessage({ type: "vercel-notebook-tool-result", id: data.id, result: {
-            protocol: 2, ready: !!widget, connected: !!kernel && kernel.connectionStatus === "connected"
+            protocol: 2, ready: !!widget, kernel_started: !!kernel, connected: !!kernel && kernel.connectionStatus === "connected"
           } }, event.origin);
         });
         window.addEventListener("message", function (event) {

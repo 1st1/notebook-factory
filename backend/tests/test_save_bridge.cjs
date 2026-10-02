@@ -206,10 +206,12 @@ test('connection reports distinguish a loaded notebook from a connected kernel',
   } };
   await handlers.message(message);
   assert.equal(reply.result.ready, true);
+  assert.equal(reply.result.kernel_started, false);
   assert.equal(reply.result.connected, false);
   shell.currentWidget.sessionContext = { session: { kernel: { connectionStatus: 'connected' } } };
   await handlers.message(message);
   assert.equal(reply.result.connected, true);
+  assert.equal(reply.result.kernel_started, true);
   shell.currentWidget.sessionContext.session.kernel.connectionStatus = 'disconnected';
   await handlers.message(message);
   assert.equal(reply.result.connected, false);

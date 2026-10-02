@@ -401,6 +401,16 @@ function App() {
 
   async function loadEditor(id: string) {
     setSetups(items => ({ ...items, [id]: { stage: "Connecting…", log: "", started: Date.now() } }));
+    const observed = new Set<string>();
+    const milestone = (message: string) => {
+      if (observed.has(message)) return;
+      observed.add(message);
+      const now = Date.now();
+      updateSetup(id, current => ({ ...current, stage: message,
+        log: (current.log + `[${new Date(now).toLocaleTimeString()} · +${((now - current.started) / 1000).toFixed(1)}s] ${message}\n`).slice(-20000),
+      }));
+    };
+    milestone("Editor requested");
     const previous = editorsRef.current[id];
     try {
       if (previous?.ready) {
@@ -409,11 +419,11 @@ function App() {
         await api(`/notebooks/${id}/close`, { token: previous.token, source, publish: false });
       }
       const result = await startEditor(id, (kind, message) => {
-        if (kind === "progress") updateSetup(id, current => ({ ...current, stage: message }));
+        if (kind === "progress") milestone(message);
         if (kind === "log") updateSetup(id, current => ({ ...current, log: (current.log + message).slice(-20000) }));
       });
       putEditor(id, { ...result, notebookId: id, ready: false, connected: false });
-      updateSetup(id, current => ({ ...current, stage: "Loading notebook…" }));
+      milestone("Loading Jupyter in the browser…");
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
       await new Promise<void>((resolve, reject) => {
         const requestId = crypto.randomUUID();
@@ -421,7 +431,10 @@ function App() {
         const cleanup = () => { clearInterval(poll); clearTimeout(timeout); window.removeEventListener("message", receive); };
         const receive = (event: MessageEvent) => {
           if (event.source !== frames.current.get(result.token)?.contentWindow || event.origin !== origin || event.data?.id !== requestId) return;
+          if (event.data.result?.ready) milestone("Notebook loaded; waiting for Python kernel…");
+          if (event.data.result?.kernel_started) milestone("Python kernel started; connecting…");
           if (event.data.result?.ready && event.data.result?.connected !== false) {
+            milestone("Python kernel connected — editor ready");
             cleanup(); patchEditor(id, result.token, { ready: true, connected: true });
             updateSetup(id, current => ({ ...current, stage: "" }));
             resolve();
@@ -434,6 +447,9 @@ function App() {
         window.addEventListener("message", receive);
       });
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    } catch (error) {
+      milestone(error instanceof Error ? error.message : "Editor setup failed");
+      throw error;
     } finally {
       if (previous) closingTokens.current.delete(previous.token);
       updateSetup(id, current => ({ ...current, finished: Date.now() }));
@@ -679,15 +695,15 @@ function App() {
                 )}
               </div>
             )}
-            {setupStage && (
-              <section className="setup-progress" aria-label="Environment setup">
-                <div className="progress" role="status">
+            {(setupStage || setupLog) && (
+              <details open={!editorReady} className="setup-progress" aria-label="Environment setup">
+                <summary className="progress" role="status">
                   {setupStarted !== null && <LoaderCircle size={16} className="spin" />}
-                  <span>{setupStarted !== null ? setupStage : "Setup did not finish"}</span>
+                  <span>{editorReady ? "Editor ready" : setupStage}</span>
                   <small>{setupSeconds}s elapsed</small>
-                </div>
-                {setupLog && <pre ref={setupOutput} className="setup-output" aria-label="Installation output">{setupLog}</pre>}
-              </section>
+                </summary>
+                {setupLog && <pre ref={setupOutput} className="setup-output" aria-label="Startup events">{setupLog}</pre>}
+              </details>
             )}
 
           </>

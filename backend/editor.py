@@ -53,6 +53,7 @@ async def _start_runtime(owner, report=lambda kind, message: None):
             name=workspace_drive_name("user:" + name), region=environment["region"],
             max_size_bytes=4 * 1024**3,
         )
+        report("progress", "Starting Sandbox VM…")
         for attempt in range(30):
             try:
                 instance = await sandbox.create_sandbox(
@@ -60,6 +61,7 @@ async def _start_runtime(owner, report=lambda kind, message: None):
                     region=environment["region"],
                     mounts={"/vercel": drive, "/notebook-base": sandbox.DriveMount(environment["drive_name"], mode="snapshot")},
                 )
+                report("progress", "Sandbox VM ready")
                 break
             except sandbox.SandboxApiError as error:
                 if error.status_code != 409 or attempt == 29:
@@ -159,6 +161,7 @@ async def _start_runtime(owner, report=lambda kind, message: None):
                     try:
                         response = await client.get(url + "/api/status")
                         if response.status_code == 200:
+                            report("progress", "Jupyter server ready")
                             return {"name": name, "base_url": url, "generation": generation()}
                     except httpx.HTTPError:
                         pass
@@ -219,6 +222,7 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
         if current and current.get("generation") == generation() and await _alive(current):
             instance = await sandbox.get_sandbox(name=current["name"])
             await _extend(instance)
+            report("progress", "Reusing running Jupyter server")
         else:
             # The stable name also recovers a runtime created before an interrupted DB write.
             await _destroy_runtime({"name": key})
@@ -235,6 +239,7 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
         folder = "notebooks/" + hashlib.sha256(notebook_id.encode()).hexdigest()
         path = folder + "/notebook-" + token + ".ipynb"
         await instance.fs.write_text(path, source)
+        report("progress", "Notebook file ready")
         return {
             "name": current["name"], "shared": True, "base_url": current["base_url"],
             "path": path, "token": token,
