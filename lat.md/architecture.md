@@ -177,7 +177,7 @@ It also checks bundled rendering templates, workspace-relative launcher paths, p
 
 [Frontend styles](../frontend/src/style.css) fixes the app to the dynamic viewport height and suppresses outer document scrolling and overscroll. The notebook surface fills the remaining space; its compact panel header contains the title and notebook actions.
 
-Notebook and chat panels share compact, aligned headers; chat actions are grouped at the right. Errors appear below the workspace with matching horizontal margins. Title spacing is compact.
+Notebook and chat panels span the full available workspace width at every breakpoint, with no outer horizontal margins. They share compact, aligned headers; chat actions are grouped at the right. Errors appear below the workspace with matching horizontal margins. Title spacing is compact.
 
 The sidebar uses a green creation button and white search field without shortcut hints. Clicking anywhere in the search field focuses its input. User avatars and notebook icons share a horizontal centerline, with compact user dropdown spacing. Escape dismisses the new-notebook dialog.
 

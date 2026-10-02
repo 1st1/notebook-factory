@@ -705,7 +705,7 @@ main > .progress { flex-shrink: 0; }
   .sidebar-bottom { padding-top: 8px; }
 }
 
-.notebook-workspace { display: flex; flex: 1; min-height: 0; min-width: 0; gap: 16px; position: relative; margin: 0 46px; }
+.notebook-workspace { display: flex; flex: 1; min-height: 0; min-width: 0; gap: 16px; position: relative; margin: 0; }
 .notebook-workspace .notebook-surface { min-width: 0; margin: 0; }
 .chat-panel { display: flex; flex-direction: column; width: 360px; max-width: 100%; min-height: 0; flex-shrink: 0; border: 1px solid #dde1d5; border-radius: 10px; background: #fafbf7; overflow: hidden; }
 .chat-panel[hidden] { display: none; }
@@ -730,9 +730,6 @@ main > .progress { flex-shrink: 0; }
 @media (max-width: 1100px) { .chat-panel { width: 320px; } }
 @media (max-width: 1100px) { .chat-panel { position: absolute; right: 0; top: 0; bottom: 0; width: min(360px, 100%); z-index: 5; box-shadow: -8px 0 30px #0002; } .actions { flex-wrap: wrap; } }
 
-@media (min-width: 1500px) { .notebook-workspace { margin-inline: 70px; } }
-@media (max-width: 1000px) { .notebook-workspace { margin-inline: 26px; } }
-@media (max-width: 650px) { .notebook-workspace { margin-inline: 12px; } }
 @media (max-height: 600px) { .chat-panel textarea { height: 52px; } .chat-panel > form { padding: 8px; } }
 
 main > .error { align-items: center; margin: 12px 46px 0; }
