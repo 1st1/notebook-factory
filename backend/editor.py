@@ -1,10 +1,8 @@
 """Jupyter runs in Sandbox; its WebSockets connect directly from the iframe."""
 
 import hashlib
-import io
 import json
 import os
-import re
 import secrets
 from pathlib import Path
 
@@ -15,6 +13,7 @@ from vercel import sandbox
 from vercel.api import session
 
 from config import APP_URL, MAX_BYTES
+from sandbox_environment import prepared
 
 ASSETS = Path(__file__).with_name("assets")
 PORT = 8888
@@ -37,64 +36,22 @@ def generation():
     return "local-" + digest.hexdigest()[:16]
 
 
-class SetupOutput(io.TextIOBase):
-    def __init__(self, report):
-        self.report = report
-        self.tail = ""
-        self.sent = 0
-
-    def writable(self):
-        return True
-
-    def write(self, text):
-        clean = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
-        self.tail = (self.tail + clean)[-3000:]
-        if self.sent < 100_000:
-            chunk = clean[: 100_000 - self.sent]
-            self.report("log", chunk)
-            self.sent += len(chunk)
-        return len(text)
-
-
 async def start(source: str, report=lambda kind, message: None):
     token = secrets.token_urlsafe(32)
     name = "nf-" + secrets.token_hex(12)
     async with session():
-        report("progress", "Creating your Sandbox…")
-        instance = await sandbox.create_sandbox(name=name, ports=[PORT], execution_time_limit=900)
+        environment = prepared()
+        report("progress", "Restoring your prepared Python environment…")
+        instance = await sandbox.create_sandbox(
+            name=name,
+            ports=[PORT],
+            execution_time_limit=900,
+            persistent=False,
+            region=environment["region"],
+            source=sandbox.SnapshotSource(snapshot_id=environment["snapshot_id"]),
+        )
         try:
-            await instance.fs.write_text("notebook.ipynb", source)
-            report("progress", "Installing Python and JupyterLab…")
-            output = SetupOutput(report)
-            install = await instance.run_process(
-                "sh",
-                [
-                    "-c",
-                    '(command -v uv || python3 -m pip install "uv>=0.8,<1") && '
-                    'uv venv --seed --python 3.13 .venv && uv pip install --python .venv/bin/python "jupyterlab==4.4.10" "pysqlite3-binary==0.5.4.post2"',
-                ],
-                stdout=output,
-                stderr=output,
-                kill_after=220,
-            )
-            if install.returncode:
-                raise RuntimeError(f"Jupyter dependency installation failed: {output.tail}")
-            report("progress", "Installing emoji and Unicode fonts…")
-            await instance.fs.write_text(
-                ".install-notebook-fonts.py", (ASSETS / "install_fonts.py").read_text()
-            )
-            await instance.fs.write_text(
-                ".notebook-fonts.json", (ASSETS / "fonts.json").read_text()
-            )
-            fonts = await instance.run_process(
-                ".venv/bin/python",
-                [".install-notebook-fonts.py", ".notebook-fonts.json"],
-                stdout=output,
-                stderr=output,
-                kill_after=60,
-            )
-            if fonts.returncode:
-                raise RuntimeError("Notebook font installation failed")
+            files = {"notebook.ipynb": source}
             report("progress", "Configuring the notebook editor…")
             for filename, target in {
                 "jupyter_launcher.py": ".notebook-editor.py",
@@ -108,7 +65,7 @@ async def start(source: str, report=lambda kind, message: None):
                     .read_text()
                     .replace("__PARENT_ORIGIN__", json.dumps(APP_URL))
                 )
-                await instance.fs.write_text(target, content)
+                files[target] = content
             settings = {
                 "docmanager-extension/plugin": {
                     "autosave": True,
@@ -129,10 +86,10 @@ async def start(source: str, report=lambda kind, message: None):
             for key, value in settings.items():
                 directory, filename = key.split("/")
                 folder = f".jupyter/lab/user-settings/@jupyterlab/{directory}"
-                await instance.fs.mkdir(folder)
-                await instance.fs.write_text(
-                    f"{folder}/{filename}.jupyterlab-settings", json.dumps(value)
-                )
+                files[f"{folder}/{filename}.jupyterlab-settings"] = json.dumps(value)
+            async with instance.fs.batch() as batch:
+                for target, content in files.items():
+                    batch.write_text(target, content)
             patch = await instance.run_process(
                 ".venv/bin/python", [".patch-jupyter-template.py"], capture_output=True
             )

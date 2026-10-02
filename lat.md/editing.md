@@ -6,11 +6,11 @@ A notebook's durable document lives in Postgres. JupyterLab provides temporary e
 
 [[backend/main.py#provision_editor]] reuses a reachable editor or creates a replacement from the durable draft. Transient provider failures preserve the existing session instead of silently replacing it.
 
-[[backend/editor.py#start]] creates a randomly named Sandbox with port 8888 and an initial 15-minute execution limit. It writes `notebook.ipynb`, creates a Python 3.13 virtual environment with uv and seeded pip, and installs pinned JupyterLab 4.4.10 and pysqlite3-binary.
+[[backend/editor.py#start]] creates a randomly named Sandbox with port 8888 and an initial 15-minute execution limit. It restores the prepared dependency snapshot, then writes the current `notebook.ipynb`, fresh editor assets, settings, and capability token. Document, bridge, and settings files upload in one filesystem batch. Editor Sandboxes are non-persistent; their documents remain in Postgres.
 
 Users and the assistant can run `%pip install numpy matplotlib` in a code cell to install packages into the active kernel environment. The assistant prompt recommends this notebook-native syntax.
 
-Each new Sandbox installs its environment from scratch; there is no prebuilt snapshot cache. Installation has a 220-second process deadline. After configuration, the backend starts Jupyter and polls its public route for up to 45 seconds before declaring failure.
+The snapshot already includes Python 3.13, pip, pinned JupyterLab, NumPy, pandas, SciPy, Matplotlib, Seaborn, and prepared fonts. There is no interactive dependency installation. After configuration, the backend starts Jupyter and polls its public route for up to 45 seconds before declaring failure.
 
 Files in [backend/assets](../backend/assets) supply focused editor CSS, the message bridge, a SQLite compatibility shim, a launcher, and a template patch. These were adapted from `/Users/yury/dev/vercel/vercel-py`, branch `nb_next`, commit `8296336`; the upstream license is retained in [backend/assets/LICENSE](../backend/assets/LICENSE).
 
@@ -39,7 +39,7 @@ Each event is a JSON object inside an SSE `data:` frame:
 
 The server sends heartbeat comments every ten seconds while waiting and disables proxy buffering with `X-Accel-Buffering: no`. Authentication and missing-notebook errors happen before streaming; subsequent errors use the event contract.
 
-[[backend/editor.py#SetupOutput]] forwards SDK stdout/stderr, strips ANSI escapes, limits forwarded installation output to 100,000 characters, and retains a bounded diagnostic tail. The browser keeps the last 20,000 characters, scrolls output, and shows elapsed seconds. It retains failed setup output for inspection. The setup panel shares the notebook surface’s responsive horizontal margins, and long log lines wrap within the panel.
+Prepared environments report restore, configuration, Jupyter startup, and readiness stages instead of installation logs. The browser shows elapsed seconds and retains errors for inspection. The log event remains supported; its browser buffer is bounded to 20,000 characters and long lines wrap within the notebook surface's margins.
 
 The stream owns the provisioning task and cancels it on disconnect. Provisioning and lease cleanup have cancellation handling. Ordinary callers without the streaming Accept header retain the JSON endpoint behavior.
 
@@ -89,7 +89,7 @@ Reference publishing verifies hashes of prepared notebook/HTML files and creates
 
 Editor environments belong to the deployment that created them. Opening or reconnecting after a deployment replaces an older environment instead of reusing its embedded Jupyter bridge.
 
-[[backend/editor.py#generation]] uses Vercel's deployment ID (deployment URL fallback); local development hashes bundled editor assets, provisioning code, and Python dependency declarations. Legacy sessions without a generation are stale. There is currently no Sandbox snapshot cache; this policy governs live environment reuse.
+[[backend/editor.py#generation]] uses Vercel's deployment ID (deployment URL fallback); local development hashes bundled editor assets, provisioning code, and Python dependency declarations. Legacy sessions without a generation are stale. This policy governs live editor reuse. The shared dependency snapshot contains no notebook, bridge, app origin, or editor token, so it can be reused while each deployment injects fresh app assets.
 
 [[backend/main.py#provision_editor]] recovers the old Sandbox's latest saved notebook into the database before provisioning its replacement. It keeps the old environment if recovery or startup fails and stops it only after the new session is committed. Once replaced, old session tokens cannot save or publish. Unopened stale environments expire normally; already-open browsers are not forcibly interrupted at deployment time.
 
@@ -101,10 +101,24 @@ New Sandboxes install Noto Emoji and Noto Sans JP alongside Matplotlib's default
 
 [[scripts/prepare_fonts.py#prepare]] builds static regular and bold faces once from pinned, checksum-verified Google Fonts sources, retains OFL licenses, and publishes an immutable ZIP to Blob. The committed [font manifest](../backend/assets/fonts.json) pins its URL and SHA-256 digest.
 
-[[backend/assets/install_fonts.py#install]] only downloads, verifies, and unpacks that bundle before configuring Matplotlib. Sandboxes no longer install fontTools or convert variable fonts. Setup logs report download/install duration. Existing environments require reconnecting after deployment; existing plot outputs must be rerun.
+[[backend/assets/install_fonts.py#install]] downloads, verifies, and unpacks that bundle during snapshot preparation before configuring Matplotlib. Interactive Sandboxes inherit installed fonts and do not download or convert them. Setup logs report download/install duration. Existing environments require reconnecting after deployment; existing plot outputs must be rerun.
 
 ## Font bundle verification
 
 Installer tests cover verified extraction, removal of legacy variable faces, Matplotlib configuration, corrupt downloads, and unexpected archive paths. Untrusted or incomplete bundles fail before installing fonts.
 
 Live Sandbox checks render normal and bold emoji/Japanese labels, rejecting both missing-glyph and font-weight lookup warnings.
+
+## Prepared dependency environment
+
+[[backend/sandbox_environment.py]] defines a dependency-only snapshot, built and verified by [[scripts/prepare_sandbox.py#prepare]] before deployment. The committed manifest selects an immutable snapshot in iad1.
+
+Its fingerprint covers installation code, direct requirements, the complete dependency lock, and font inputs. Changed inputs require a new snapshot; unchanged deploys validate and reuse the existing one. Missing or deleted snapshots rebuild during preparation. Provider/auth failures abort deployment. Snapshots do not expire automatically, allowing older deployments to retain their pinned environment for rollback.
+
+The builder installs into a clean Sandbox, warms Matplotlib's cache, then snapshots before any user document or editor assets are written. A separate restored Sandbox verifies imports and absence of notebook data before the manifest is published. Editor sessions restore that snapshot with persistence disabled, avoiding snapshots of private notebook content. Startup never silently falls back to a long dependency installation.
+
+## Prepared environment tests
+
+Regressions verify editors restore the selected snapshot without installing packages, write the current notebook and bridge, and use non-persistent sessions. Dependency changes invalidate the prepared manifest.
+
+Live checks additionally verify snapshot creation, restoration, kernel execution, fonts, and startup timing.
