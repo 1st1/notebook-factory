@@ -7,6 +7,26 @@ exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for 
 exclude-newer-span = "P2D"
 
 [[package]]
+name = "ai"
+version = "0.8.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx2" },
+    { name = "modelsdotdev" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d7/ea/06b154054189fdc14116246f0231df0e28e138cc1627c3aab4b2a47b137e/ai-0.8.0.tar.gz", hash = "sha256:ff4e8541f990e15839e9c86b0285d435fe60516eb430db8ecb6e2ba5a9cf79b1", size = 1234217, upload-time = "2026-09-29T22:39:28.144Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/52/50/caf9a78a781777655e9cc8f0431df3540fe18f5568572387e2af030e1abb/ai-0.8.0-py3-none-any.whl", hash = "sha256:d2ba66992d3117996d37a96c9a2a4f36bfef16c862bfac5c311a963c3e084903", size = 213685, upload-time = "2026-09-29T22:39:26.197Z" },
+]
+
+[package.optional-dependencies]
+vercel = [
+    { name = "vercel-oidc" },
+]
+
+[[package]]
 name = "aiosqlite"
 version = "0.22.1"
 source = { registry = "https://pypi.org/simple" }
@@ -719,6 +739,15 @@ wheels = [
 ]
 
 [[package]]
+name = "modelsdotdev"
+version = "0.20260818.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/17/34/e5d0b54bf967bee3e37cb7d8261143670a79603f6e770fb8a68d8ffcd17a/modelsdotdev-0.20260818.0.tar.gz", hash = "sha256:375e6793dc5bc731075e7631ee32b7d0a3be6a4a6cade3e3d417664dae40d8fd", size = 1087820, upload-time = "2026-08-18T08:14:47.009Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/92/242f3c5a20d64e964895a02fe5c86ae66ed09e6317be600c67012bc1addc/modelsdotdev-0.20260818.0-py3-none-any.whl", hash = "sha256:dd55b13bfd029e2a8345f7326e4239dcb8b972d2bbd174f422aa0ca59da1ad9c", size = 1096608, upload-time = "2026-08-18T08:14:45.326Z" },
+]
+
+[[package]]
 name = "nbclient"
 version = "0.11.0"
 source = { registry = "https://pypi.org/simple" }
@@ -778,6 +807,7 @@ name = "notebook-factory-api"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "ai", extra = ["vercel"] },
     { name = "aiosqlite" },
     { name = "asyncpg" },
     { name = "fastapi" },
@@ -801,6 +831,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ai", extras = ["vercel"], specifier = ">=0.8,<0.9" },
     { name = "aiosqlite", specifier = ">=0.21,<1" },
     { name = "asyncpg", specifier = ">=0.30,<1" },
     { name = "fastapi", specifier = ">=0.115,<1" },

@@ -15,6 +15,7 @@ dependencies = [
   "vercel-sandbox>=0.6,<0.7",
   "python-dotenv>=1,<2",
   "vercel>=0.5,<1",
+  "ai[vercel]>=0.8,<0.9",
 ]
 [dependency-groups]
 dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.12"]

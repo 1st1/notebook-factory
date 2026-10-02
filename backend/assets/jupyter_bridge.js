@@ -150,6 +150,72 @@
         waitForJupyterApp();
         waitForNotebookContext();
 
+        var toolQueue = Promise.resolve();
+        function snapshot(widget) {
+          return widget.content.model.sharedModel.cells.map(function (cell) {
+            var value = cell.toJSON();
+            return { id: cell.getId(), cell_type: value.cell_type, source: cell.getSource(),
+              outputs: (value.outputs || []).slice(-10).map(function (output) {
+                return { text: String(output.text || (output.data && output.data["text/plain"]) || "").slice(-8000),
+                  error: output.evalue, traceback: (output.traceback || []).slice(-10).map(function (line) { return line.slice(-2000); }),
+                  has_image: !!(output.data && output.data["image/png"]) };
+              }) };
+          });
+        }
+        async function notebookTool(data) {
+          var app = window.jupyterapp;
+          var widget = app && app.shell.currentWidget;
+          if (!widget || !widget.content || !widget.context || widget.context.path !== "notebook.ipynb")
+            throw new Error("Select notebook.ipynb and wait for Jupyter to load.");
+          await widget.context.ready;
+          var model = widget.content.model.sharedModel;
+          var args = data.args || {};
+          if (data.tool === "read_notebook") {
+            var cells = snapshot(widget);
+            if (JSON.stringify(cells).length > 150000) throw new Error("Notebook is too large for chat (150 KB text limit).");
+            return { cells: cells };
+          }
+          if (typeof args.source === "string" && args.source.length > 50000) throw new Error("Cell is too large.");
+          if (data.tool === "insert_cell") {
+            if (!["code", "markdown"].includes(args.cell_type) || typeof args.source !== "string") throw new Error("Invalid cell.");
+            var after = args.after_id === "" ? -1 : model.cells.findIndex(function (c) { return c.getId() === args.after_id; });
+            if (args.after_id !== "" && after < 0) throw new Error("Cell no longer exists. Read the notebook again.");
+            var id = crypto.randomUUID();
+            model.insertCell(after + 1, { id: id, cell_type: args.cell_type, source: args.source, metadata: {},
+              ...(args.cell_type === "code" ? { outputs: [], execution_count: null } : {}) });
+            return { cell_id: id, inserted: true };
+          }
+          var index = model.cells.findIndex(function (c) { return c.getId() === args.cell_id; });
+          if (index < 0) throw new Error("Cell no longer exists. Read the notebook again.");
+          var cell = model.cells[index];
+          if (cell.getSource() !== args.expected_source) throw new Error("Cell changed since reading. Read the notebook again before editing or running.");
+          if (data.tool === "replace_cell") {
+            if (typeof args.source !== "string") throw new Error("Invalid source.");
+            cell.setSource(args.source);
+            return { cell_id: cell.getId(), updated: true };
+          }
+          if (data.tool === "run_cell") {
+            if (cell.cell_type !== "code") throw new Error("Only code cells can run.");
+            widget.content.deselectAll();
+            widget.content.activeCellIndex = index;
+            await app.commands.execute("notebook:run-cell", { toolbar: true });
+            return { cell: snapshot(widget).find(function (c) { return c.id === args.cell_id; }) };
+          }
+          throw new Error("Unknown notebook tool.");
+        }
+        window.addEventListener("message", function (event) {
+          var data = event.data;
+          if (event.source !== window.parent || event.origin !== __PARENT_ORIGIN__ ||
+              !data || data.type !== "vercel-notebook-tool" || data.token !== bridgeToken || typeof data.id !== "string") return;
+          var pending = toolQueue.then(function () { return notebookTool(data); });
+          toolQueue = pending.catch(function () {});
+          pending.then(function (result) {
+            event.source.postMessage({ type: "vercel-notebook-tool-result", id: data.id, result: result }, event.origin);
+          }, function (error) {
+            event.source.postMessage({ type: "vercel-notebook-tool-result", id: data.id, error: error.message }, event.origin);
+          });
+        });
+
         window.addEventListener("message", async function (event) {
           var data = event.data;
           if (

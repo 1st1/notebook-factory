@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select, update
 from vercel.headers import HeadersContext
 
+import chat
 import editor
 import publication
 from auth import require_owner
@@ -370,3 +371,22 @@ async def stop_closed_editor(current):
 @app.get("/api/health")
 async def health():
     return JSONResponse({"ok": True})
+
+
+@app.post("/api/notebooks/{id}/chat", dependencies=[Depends(require_owner)])
+async def notebook_chat(id: str, request: Request):
+    raw = await request.body()
+    if len(raw) > 1_000_000:
+        raise HTTPException(413, "Chat history is too large. Start a new chat.")
+    try:
+        body = chat.ChatRequest.model_validate_json(raw)
+        messages, _ = chat.ai.ui.ai_sdk.to_messages(body.messages)
+    except ValueError:
+        raise HTTPException(422, "Invalid chat messages") from None
+    await checked_editor(id, body.token)
+    return StreamingResponse(
+        chat.stream(
+            messages, body.messages[-1].id if body.messages[-1].role == "assistant" else None
+        ),
+        headers=chat.ai.ui.ai_sdk.UI_MESSAGE_STREAM_HEADERS,
+    )

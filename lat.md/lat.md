@@ -3,6 +3,7 @@
 Current implementation, deployment, and operating documentation for the notebook publishing workspace.
 
 - [[architecture]] — Product scope, service boundaries, persistence, rendering, authentication, and regression invariants.
+- [[chat]] — AI assistant, live notebook tools, streaming, and authorization.
 - [[editing]] — Sandbox provisioning, live progress, Jupyter integration, saving, publication, and shutdown.
 - [[deployment]] — Linked production project, environment configuration, local development, deployment, and troubleshooting.
 - [[verification]] — Automated checks, live smoke checks, and their coverage limits.

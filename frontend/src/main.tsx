@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowUpRight,
@@ -10,12 +10,14 @@ import {
   LoaderCircle,
   LogOut,
   Menu,
+  MessageSquare,
   Pencil,
   Plus,
   Search,
   X,
 } from "lucide-react";
 import "./style.css";
+const Chat = lazy(() => import("./Chat").then(module => ({ default: module.Chat })));
 
 type Notebook = {
   id: string;
@@ -149,6 +151,8 @@ function App() {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatBusy, setChatBusy] = useState(false);
   const [closing, setClosing] = useState(false);
   const [saved, setSaved] = useState("");
   const [mobile, setMobile] = useState(false);
@@ -304,7 +308,7 @@ function App() {
     }
   }
   async function choose(id: string) {
-    if (busy || saving.current || id === selected) return;
+    if (busy || chatBusy || saving.current || id === selected) return;
     await action("Opening notebook", async () => {
       if (editor) await persist(false, true);
       setSelected(id);
@@ -380,7 +384,7 @@ function App() {
                 className={
                   "notebook-link " + (n.id === selected ? "active" : "")
                 }
-                disabled={!!busy}
+                disabled={!!busy || chatBusy}
                 onClick={() => choose(n.id)}
               >
                 <BookOpen size={16} />
@@ -447,7 +451,7 @@ function App() {
             <span>{error}</span>
             {editor && (
               <button
-                disabled={!!busy}
+                disabled={!!busy || chatBusy}
                 onClick={() =>
                   action("Reconnecting…", async () => {
                     setEditor(
@@ -487,7 +491,7 @@ function App() {
                     (!editor ? (
                       <button
                         className="button primary"
-                        disabled={!!busy}
+                        disabled={!!busy || chatBusy}
                         onClick={() =>
                           action(
                             "Starting your Python environment…",
@@ -513,9 +517,10 @@ function App() {
                       </button>
                     ) : (
                       <>
+                        <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(value => !value)}><MessageSquare size={16}/>Chat</button>
                         <button
                           className="button"
-                          disabled={!!busy}
+                          disabled={!!busy || chatBusy}
                           onClick={() =>
                             action("Discarding draft…", discardEditor)
                           }
@@ -524,7 +529,7 @@ function App() {
                         </button>
                         <button
                           className="button primary"
-                          disabled={!!busy}
+                          disabled={!!busy || chatBusy}
                           onClick={() =>
                             action("Saving and closing…", () => persist(true, true))
                           }
@@ -563,6 +568,7 @@ function App() {
                 {setupLog && <pre ref={setupOutput} className="setup-output" aria-label="Installation output">{setupLog}</pre>}
               </section>
             )}
+            <div className="notebook-workspace">
             <div className={"notebook-surface " + (editor ? "editing" : "")}>
               <div className="surface-toolbar">
                 <span>
@@ -597,6 +603,8 @@ function App() {
                   version={renderVersion}
                 />
               )}
+            </div>
+            {editor && <Suspense fallback={null}><Chat key={editor.token} notebookId={selected!} editor={editor} frame={frame} disabled={!!busy || closing} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy}/></Suspense>}
             </div>
           </>
         ) : (
@@ -668,7 +676,7 @@ function App() {
                 type="button"
                 className="button"
                 onClick={() => setCreating(false)}
-                disabled={!!busy}
+                disabled={!!busy || chatBusy}
               >
                 Cancel
               </button>

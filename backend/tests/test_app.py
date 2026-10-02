@@ -42,6 +42,7 @@ def create(client):
         ("/api/notebooks/missing/save", {"token": "x"}),
         ("/api/notebooks/missing/close", {"token": "x"}),
         ("/api/notebooks/missing/discard", {"token": "x"}),
+        ("/api/notebooks/missing/chat", {"token": "x", "messages": []}),
     ],
 )
 def test_mutations_require_owner_and_origin(client, path, body):
@@ -474,3 +475,20 @@ async def test_blob_upload_has_isolation_policy_and_immutable_url(monkeypatch):
     assert payload.index("Content-Security-Policy") < payload.index("<body>")
     assert put.call_args.kwargs["add_random_suffix"] is True
     assert put.call_args.kwargs["access"] == "public"
+
+
+# @lat: [[chat#Chat authorization tests]]
+def test_chat_requires_active_editor(client):
+    id = create(client)
+    response = client.post(
+        f"/api/notebooks/{id}/chat",
+        json={
+            "token": "stale",
+            "messages": [
+                {"id": "u1", "role": "user", "parts": [{"type": "text", "text": "hello"}]}
+            ],
+        },
+    )
+    assert response.status_code == 409
+    response = client.post(f"/api/notebooks/{id}/chat", content="x" * 1_000_001)
+    assert response.status_code == 413

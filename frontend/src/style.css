@@ -738,3 +738,30 @@ main > .progress { flex-shrink: 0; }
   .search { padding-top: 12px; padding-bottom: 12px; }
   .sidebar-bottom { padding-top: 8px; }
 }
+
+.notebook-workspace { display: flex; flex: 1; min-height: 0; min-width: 0; gap: 16px; position: relative; margin: 0 46px; }
+.notebook-workspace .notebook-surface { min-width: 0; margin: 0; }
+.chat-panel { display: flex; flex-direction: column; width: 360px; max-width: 100%; min-height: 0; flex-shrink: 0; border: 1px solid #dde1d5; border-radius: 10px; background: #fafbf7; overflow: hidden; }
+.chat-panel[hidden] { display: none; }
+.chat-panel > header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #dde1d5; }
+.chat-messages { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: none; padding: 16px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.chat-message { margin-bottom: 20px; }
+.chat-message > small { color: #7b8573; font-weight: 600; }
+.chat-message.user { padding: 10px 12px; border-radius: 8px; background: #e9ede3; }
+.chat-message p { margin: 6px 0; }
+.chat-message pre { overflow: auto; background: #edf0e9; padding: 10px; border-radius: 6px; }
+.chat-message code { font-size: 12px; }
+.chat-tool { font-size: 11px; color: #69765e; border-left: 2px solid #a2ad98; margin: 8px 0; padding-left: 8px; }
+.chat-hint { color: #7b8573; }
+.chat-error { color: #a84933; }
+.chat-panel > form { border-top: 1px solid #dde1d5; padding: 12px; }
+.chat-panel textarea { width: 100%; resize: none; border: 1px solid #dde1d5; border-radius: 6px; padding: 10px; font: inherit; font-size: 13px; background: white; }
+.chat-panel form > div { display: flex; justify-content: flex-end; margin-top: 8px; }
+.chat-panel form > small { font-size: 11px; color: #7b8573; }
+@media (max-width: 1100px) { .chat-panel { width: 320px; } }
+@media (max-width: 1100px) { .chat-panel { position: absolute; right: 0; top: 0; bottom: 0; width: min(360px, 100%); z-index: 5; box-shadow: -8px 0 30px #0002; } .actions { flex-wrap: wrap; } }
+
+@media (min-width: 1500px) { .notebook-workspace { margin-inline: 70px; } }
+@media (max-width: 1000px) { .notebook-workspace { margin-inline: 26px; } }
+@media (max-width: 650px) { .notebook-workspace { margin-inline: 12px; } }
+@media (max-height: 600px) { .chat-panel textarea { height: 52px; } .chat-panel > header { padding-block: 8px; } .chat-panel > form { padding: 8px; } }
