@@ -105,3 +105,29 @@ test('save finds the open notebook when Jupyter has no focused widget', async ()
   assert.equal(saved, 1);
   assert.equal(response.type, 'vercel-notebook-saved');
 });
+
+// @lat: [[chat#Notebook scrolling tests]]
+test('scroll tools page within the notebook and target stable cell IDs without changing content', async () => {
+  const calls = [];
+  const scroller = { scrollTop: 800, clientHeight: 500, scrollBy({ top }) { this.scrollTop += top; } };
+  const content = { outerNode: scroller, model: { sharedModel: { cells: [
+    { getId: () => 'first' }, { getId: () => 'last' },
+  ] } }, async scrollToItem(index, alignment) { calls.push([index, alignment]); } };
+  const { handlers, parent } = bridge({ path: 'notebook.ipynb', ready: Promise.resolve(), save() {} }, content);
+  let reply;
+  parent.postMessage = value => { reply = value; };
+  async function scroll(args) {
+    await handlers.message({ source: parent, origin: 'https://app.test', data: {
+      type: 'vercel-notebook-tool', token: 'token', id: 'scroll', tool: 'scroll_notebook', args,
+    } });
+    await new Promise(resolve => setImmediate(resolve));
+    return reply;
+  }
+  await scroll({ direction: 'up' }); assert.equal(scroller.scrollTop, 400);
+  await scroll({ direction: 'down' }); assert.equal(scroller.scrollTop, 800);
+  await scroll({ direction: 'bottom' });
+  await scroll({ direction: 'cell', cell_id: 'first', alignment: 'center' });
+  assert.deepEqual(calls, [[1, 'end'], [0, 'center']]);
+  assert.match((await scroll({ direction: 'cell', cell_id: 'missing' })).error, /not found/);
+  assert.match((await scroll({ direction: 'sideways' })).error, /Invalid/);
+});

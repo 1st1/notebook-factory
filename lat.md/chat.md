@@ -6,7 +6,7 @@ The editor's Chat button opens a right sidebar where the assistant can read, edi
 
 ## Agent and streaming
 
-[[backend/chat.py]] streams through Vercel AI Gateway with four browser-executed notebook tools. The model never receives Sandbox credentials or a general server-side execution tool.
+[[backend/chat.py]] streams through Vercel AI Gateway with five browser-executed notebook tools. The model never receives Sandbox credentials or a general server-side execution tool.
 
 The default model is Claude Sonnet 4.6, configurable with AI_MODEL. Medium reasoning effort enables provider reasoning output; the UI streams it in an expandable Thoughts section, open while streaming and collapsed afterward. A spinner accompanies waiting and tool-execution status. Deployment uses Vercel OIDC; local development can load VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY. Gateway access and credits are required. A free-tier model rejection displays an explicit instruction to add paid Gateway credits. Notebook sources and text outputs are sent to the model when it reads the document.
 
@@ -16,7 +16,7 @@ The Python 0.8 UI adapter dispatches completed client tool inputs through an emp
 
 The [Jupyter bridge](../backend/assets/jupyter_bridge.js) operates on the current notebook's shared model, including unsaved changes. It never replaces notebook files behind Jupyter's document context.
 
-Read returns cell IDs, sources, and text/error outputs, excluding image data. Replace and run require exact expected source, rejecting stale edits. Insert creates a new code or markdown cell; execution uses Jupyter's run-cell command so outputs and charts appear normally. Tools serialize and validate the parent origin, window identity, session token, and request ID.
+Read returns cell IDs, sources, and text/error outputs, excluding image data. Replace and run require exact expected source, rejecting stale edits. Insert creates a new code or markdown cell; execution uses Jupyter's run-cell command so outputs and charts appear normally. The scroll tool moves the notebook up/down by a page, to its top/bottom, or to a cell ID with start/center/end alignment. It uses Jupyter's virtualized-list API to reveal offscreen cells without changing selection or notebook content. The prompt instructs the assistant to reveal edited cells and outputs. Tools serialize and validate the parent origin, window identity, session token, and request ID.
 
 Exit, Save & exit, and notebook navigation are disabled during assistant work. Closing the chat sidebar keeps the session running. Stop reply cancels model streaming and skips queued tools; an already-started cell continues running and can be interrupted in Jupyter. Tool response waits time out after two minutes. Normal draft autosaving, explicit publication, and discard semantics still apply.
 
@@ -41,3 +41,7 @@ A simulated Python model stream verifies that the UI adapter emits executable cl
 The bridge resolves notebook.ipynb among Jupyter's open main-area widgets when the focused widget is absent or different. Saving and chat tools therefore do not require focus inside the notebook.
 
 Execution activates the resolved notebook before invoking Jupyter's cell command. A regression test removes the focused widget and verifies that saving still reaches the open document.
+
+## Notebook scrolling tests
+
+Bridge tests verify page scrolling is confined to the notebook, cell IDs resolve through Jupyter's virtualized list, and invalid directions or missing targets fail without changing content.

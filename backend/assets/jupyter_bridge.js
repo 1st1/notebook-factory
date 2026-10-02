@@ -183,6 +183,23 @@
           await widget.context.ready;
           var model = widget.content.model.sharedModel;
           var args = data.args || {};
+          if (data.tool === "scroll_notebook") {
+            var notebook = widget.content;
+            var scroller = notebook.outerNode;
+            if (!scroller) throw new Error("Notebook scrolling is not ready.");
+            var direction = args.direction;
+            if (direction === "up" || direction === "down") {
+              scroller.scrollBy({ top: (direction === "up" ? -1 : 1) * scroller.clientHeight * 0.8, behavior: "instant" });
+            } else if (["top", "bottom", "cell"].includes(direction)) {
+              var target = direction === "top" ? 0 : direction === "bottom" ? model.cells.length - 1 :
+                model.cells.findIndex(function (c) { return c.getId() === args.cell_id; });
+              if (target < 0 || target >= model.cells.length) throw new Error("Cell not found. Read the notebook again.");
+              var alignment = direction === "top" ? "start" : direction === "bottom" ? "end" : (args.alignment || "start");
+              if (!["start", "center", "end"].includes(alignment)) throw new Error("Invalid scroll alignment.");
+              await notebook.scrollToItem(target, alignment);
+            } else throw new Error("Invalid scroll direction.");
+            return { scrolled: true, direction: direction, scroll_top: scroller.scrollTop, viewport_height: scroller.clientHeight };
+          }
           if (data.tool === "read_notebook") {
             var cells = snapshot(widget);
             if (JSON.stringify(cells).length > 150000) throw new Error("Notebook is too large for chat (150 KB text limit).");
