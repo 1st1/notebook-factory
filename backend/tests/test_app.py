@@ -857,3 +857,29 @@ def test_multiuser_ownership_readonly_history_and_fork_without_chat(client, monk
     client.cookies.clear()
     assert client.post(f"/api/notebooks/{original_id}/fork").status_code == 401
     assert client.post(f"/api/notebooks/{original_id}/chat-history", json={}).status_code == 200
+
+
+# @lat: [[architecture#Sidebar refresh tests]]
+def test_workspace_fetches_all_sidebar_metadata_in_one_join(client):
+    from sqlalchemy import event
+    notebook_id = create(client)
+    empty = client.portal.call(enroll, {"sub": "sidebar-empty", "preferred_username": "sidebar-empty"})
+    statements = []
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+    event.listen(main.engine.sync_engine, "before_cursor_execute", record)
+    try:
+        client.cookies.clear()
+        response = client.get("/api/workspace")
+    finally:
+        event.remove(main.engine.sync_engine, "before_cursor_execute", record)
+    assert response.status_code == 200
+    assert len(statements) == 1
+    assert statements[0].upper().count("JOIN") == 1
+    for private in ("source", "published", "chat_history", "editor", "claim"):
+        assert private not in statements[0]
+    data = response.json()
+    assert any(user["id"] == empty["id"] for user in data["users"])
+    assert len({user["id"] for user in data["users"]}) == len(data["users"])
+    notebook = next(item for item in data["notebooks"] if item["id"] == notebook_id)
+    assert set(notebook) == {"id", "owner_id", "title", "updated_at", "revision", "render_url"}

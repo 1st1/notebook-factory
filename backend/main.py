@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import anyio
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, or_, select, update
@@ -72,6 +72,37 @@ def public(row):
         key: row[key]
         for key in ("id", "owner_id", "title", "created_at", "updated_at", "revision", "render_url")
     }
+
+
+@app.get("/api/search")
+async def search_notebooks(q: str = Query(min_length=1, max_length=200)):
+    from search import search_notebooks as search
+    if not q.strip():
+        return []
+    async with engine.connect() as conn:
+        return await search(conn, q.strip())
+
+
+@app.get("/api/workspace")
+async def workspace():
+    # One metadata-only join; never load notebook documents, HTML, or chat history.
+    async with engine.connect() as conn:
+        rows = (await conn.execute(select(
+            users.c.id.label("user_id"), users.c.login, users.c.avatar_url,
+            notebooks.c.id, notebooks.c.title, notebooks.c.updated_at,
+            notebooks.c.revision, notebooks.c.render_url,
+        ).select_from(users.outerjoin(notebooks, notebooks.c.owner_id == users.c.id))
+            .order_by(users.c.login, notebooks.c.updated_at.desc(), notebooks.c.id))).mappings()
+        owners, items = {}, []
+        for row in rows:
+            owner_id = row["user_id"]
+            if owner_id not in owners:
+                owners[owner_id] = {"id": owner_id, "login": row["login"], "avatar_url": row["avatar_url"]}
+            if row["id"] is not None:
+                items.append({"owner_id": owner_id, **{key: row[key] for key in (
+                    "id", "title", "updated_at", "revision", "render_url",
+                )}})
+        return {"users": list(owners.values()), "notebooks": items}
 
 
 @app.get("/api/notebooks")

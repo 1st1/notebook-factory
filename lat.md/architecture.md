@@ -77,7 +77,7 @@ Database leases coordinate editor mutations across Function instances. Shutdown 
 
 ## Product scope
 
-[[frontend/src/main.tsx]] provides notebook navigation, title search, creation, public rendering, downloads, and an embedded editor for each notebook owner.
+[[frontend/src/main.tsx]] provides notebook navigation, full-text search, creation, public rendering, downloads, and an embedded editor for each notebook owner.
 
 The selected notebook is reflected in the `notebook` URL query parameter. Public readers see published content; changed documents are published automatically when autosaved. Creation immediately publishes the starter notebook at revision 1. There is no separate unpublished-notebook state.
 
@@ -185,7 +185,7 @@ Published and editor iframes scroll internally rather than imposing minimum heig
 
 ## Workspace startup
 
-The public notebook list renders independently of authentication. A five-minute, tab-local metadata cache lets return visits show the sidebar immediately while fresh metadata loads.
+The public sidebar renders independently of authentication and refreshes every 30 seconds. A five-minute, tab-local metadata cache lets return visits show the sidebar immediately while fresh metadata loads.
 
 [[frontend/src/main.tsx#cachedNotebooks]] stores only the public list and published render URLs in session storage. Auth and edit permissions are never cached. Fresh list responses replace cached entries and reconcile selection; unavailable storage falls back to normal loading.
 
@@ -213,6 +213,10 @@ Postgres enrollment uses a transaction advisory lock around identity lookup, cap
 
 ## Community navigation and forks
 
+[[backend/main.py#workspace]] returns users and minimal notebook metadata in one users-to-notebooks outer join, retaining empty user groups and omitting source, HTML, chat, and editor data.
+
+The browser refreshes this single endpoint every 30 seconds with overlapping requests coalesced; failures retain the existing sidebar until the next retry. Group expansion and running editors remain unchanged.
+
 The sidebar expands the current user's avatar/name group first, followed by other users alphabetically and collapsed by default. Search expands matching groups; notebook selection retains background editors and agent sessions.
 
 Other users' notebooks and saved conversations are read-only, including for anonymous visitors. Only the owner can start an editor, send chat messages, clear history, rename, save, or delete. [[backend/main.py#fork_notebook]] copies published cells, metadata, and outputs into a new notebook owned by the caller. It renders a separate Blob artifact and initializes empty chat/history and no editing session. Unsaved/private drafts are not copied.
@@ -226,3 +230,15 @@ Runtime tests prove two notebooks owned by one user share a VM while a second us
 ## Vercel sign-in tests
 
 [[backend/tests/test_auth.py]] checks PKCE exchange and signed sessions, rejects invalid signature/issuer/audience/nonce/expiry, rejects old GitHub cookies, and proves failed state or denied consent never exchanges a code.
+
+## Sidebar refresh tests
+
+The workspace endpoint uses one metadata-only outer join, includes users without notebooks, and returns no document or editor data. Browser checks verify periodic refresh preserves navigation and editor state.
+
+## Notebook search
+
+[[backend/search.py]] searches public notebook titles and published code/Markdown cell sources with PostgreSQL full-text search. A stored weighted vector and GIN index keep document parsing out of the request path.
+
+Titles have higher weight than cell text. Quoted phrases, OR, and minus exclusions use websearch_to_tsquery with English stemming. Results contain only notebook metadata, ranked and limited to 100. Drafts, outputs, and chat are excluded. Database-generated vectors update with publication or rename; startup adds the vector and index to existing tables. SQLite development uses title substring matching only.
+
+The browser debounces searches for 250 milliseconds, cancels stale requests, shows loading/failure/empty states, and leaves the selected notebook and active editors intact. Clearing search restores the periodically refreshed full sidebar.

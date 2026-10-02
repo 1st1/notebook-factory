@@ -43,7 +43,7 @@ async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promi
   const response = await fetch(
     "/api" + path,
     body === undefined
-      ? {}
+      ? { signal }
       : {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -189,6 +189,29 @@ function App() {
     setSetups(items => items[id] ? { ...items, [id]: update(items[id]) } : items);
   }
   const [query, setQuery] = useState("");
+  const [searchResult, setSearchResult] = useState<{ query: string; items: Notebook[] } | null>(null);
+  const [searchError, setSearchError] = useState("");
+  const searchQuery = query.trim();
+  const searching = !!searchQuery && searchResult?.query !== searchQuery && !searchError;
+  const sidebarNotebooks = searchQuery ? (searchResult?.query === searchQuery ? searchResult.items : []) : notebooks;
+  useEffect(() => {
+    setSearchError("");
+    if (!searchQuery) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void api<Notebook[]>(`/search?q=${encodeURIComponent(searchQuery)}`, undefined, controller.signal)
+        .then(items => {
+          if (controller.signal.aborted) return;
+          setSearchResult({ query: searchQuery, items });
+          setNotebooks(existing => {
+            const byId = new Map(existing.map(item => [item.id, item]));
+            items.forEach(item => byId.set(item.id, item));
+            return [...byId.values()];
+          });
+        }).catch(() => { if (!controller.signal.aborted) setSearchError("Search failed. Try again."); });
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [searchQuery]);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [editors, setEditors] = useState<Record<string, LiveEditor>>({});
@@ -253,25 +276,36 @@ function App() {
     });
   }, []);
 
-  const refresh = useCallback(async () => {
-    await Promise.all([
-      api<Notebook[]>("/notebooks").then(list => {
+  const sidebarRequest = useRef<Promise<void> | null>(null);
+  const refreshSidebar = useCallback(() => {
+    if (sidebarRequest.current) return sidebarRequest.current;
+    const request = api<{ users: WorkspaceUser[]; notebooks: Notebook[] }>("/workspace")
+      .then(({ users, notebooks: list }) => {
+        setUsers(users);
         setNotebooks(list);
         setLoading(false);
         setSelected(current => list.some(n => n.id === current) ? current : null);
         try {
           sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: list }));
         } catch { /* Rendering must not depend on browser storage. */ }
-      }),
-      api<Auth>("/auth/me").then(setAuth).finally(() => setAuthLoaded(true)),
-      api<WorkspaceUser[]>("/users").then(setUsers),
-    ]);
+      }).finally(() => { sidebarRequest.current = null; });
+    sidebarRequest.current = request;
+    return request;
   }, []);
+  const refresh = useCallback(async () => {
+    await Promise.all([
+      refreshSidebar(),
+      api<Auth>("/auth/me").then(setAuth).finally(() => setAuthLoaded(true)),
+    ]);
+  }, [refreshSidebar]);
   useEffect(() => {
     refresh()
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [refresh]);
+    // Retain the current sidebar on transient failure; the next tick retries.
+    const timer = window.setInterval(() => { void refreshSidebar().catch(() => {}); }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [refresh, refreshSidebar]);
   useEffect(() => {
     const url = new URL(location.href);
     if (selected) url.searchParams.set("notebook", selected);
@@ -563,13 +597,13 @@ function App() {
           <span>/</span>
         </div>
         <div className="list-label">
-          NOTEBOOKS <span>{notebooks.length.toString().padStart(2, "0")}</span>
+          NOTEBOOKS
         </div>
         <nav aria-label="Notebooks">
           {sortedUsers.map(owner => {
             const mine = owner.id === auth.user?.user_id;
-            const matches = notebooks.filter(n => n.owner_id === owner.id && n.title.toLowerCase().includes(query.toLowerCase()));
-            if (query && !matches.length && !owner.login.includes(query.toLowerCase())) return null;
+            const matches = sidebarNotebooks.filter(n => n.owner_id === owner.id);
+            if (searchQuery && !matches.length) return null;
             const expanded = query ? true : expandedUsers[owner.id] ?? mine;
             return <section className="notebook-owner" key={owner.id}>
               <button className="owner-toggle" aria-expanded={expanded} onClick={() => setExpandedUsers(items => ({ ...items, [owner.id]: !expanded }))}>
@@ -586,10 +620,10 @@ function App() {
               </button>)}{!matches.length && <p className="list-empty">{mine ? "Create your first notebook." : "No notebooks yet."}</p>}</div>}
             </section>;
           })}
-          {query &&
-            !notebooks.some((n) =>
-              n.title.toLowerCase().includes(query.toLowerCase()),
-            ) && <p className="list-empty">No matching notebooks.</p>}
+          {searching && <p className="list-empty" role="status"><LoaderCircle size={14} className="spin" /> Searching…</p>}
+          {searchError && <p className="list-empty" role="alert">{searchError}</p>}
+          {searchQuery && !searching && !searchError && !sidebarNotebooks.length && <p className="list-empty">No matching notebooks.</p>}
+
         </nav>
         <div className="sidebar-bottom">
           {auth.user ? (
@@ -728,11 +762,9 @@ function App() {
               <div className="welcome-page welcome-page-back" />
               <div className="welcome-page welcome-page-front"><BookOpen size={32} strokeWidth={1.25} /><span /><span /><span /></div>
             </div>
-            <div className="eyebrow">YOUR WORKSPACE</div>
             <h1 id="welcome-title">Choose a notebook.</h1>
             <p>Open a notebook from the sidebar<br />to explore its code, charts, and ideas.</p>
             <button className="button welcome-browse" onClick={() => setMobile(true)}><Menu size={16} /> Browse notebooks</button>
-            <div className="welcome-hint"><span />{notebooks.length} {notebooks.length === 1 ? "notebook" : "notebooks"} to explore</div>
           </section>
         ) : (
           <div className="empty">
@@ -797,6 +829,7 @@ function App() {
             </div>
             {notebook && !authLoaded && <ChatLoading open={chatOpen} onClose={() => setChatOpen(false)} />}
             {authLoaded && chatIds.map(id => <Suspense key={id} fallback={<ChatLoading open={selected === id && chatOpen} onClose={() => setChatPanel({ id, open: false })} />}><Chat
+              username={workspaceUsers.find(user => user.id === notebooks.find(n => n.id === id)?.owner_id)?.login || "User"}
               model={auth.chat_model} notebookId={id} editorStarting={startingIds.has(id)} readOnly={!auth.user || notebooks.find(n => n.id === id)?.owner_id !== auth.user.user_id}
               editor={editors[id]?.connected ? editors[id] : null}
               getFrame={() => { const current = editorsRef.current[id]; return current ? frames.current.get(current.token) ?? null : null; }}

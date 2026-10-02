@@ -12,6 +12,7 @@ import { Send, Square, X, RotateCcw, LoaderCircle } from "lucide-react";
 
 export function Chat({
   notebookId,
+  username,
   model,
   editor,
   getFrame,
@@ -26,6 +27,7 @@ export function Chat({
   disabled,
 }: {
   notebookId: string;
+  username: string;
   model?: string;
   editor: { url: string; token: string } | null;
   onEnterEditing: () => Promise<void>;
@@ -305,7 +307,7 @@ export function Chat({
         )}
         {messages.map((message) => (
           <div className={`chat-message ${message.role}`} key={message.id}>
-            <small>{message.role === "user" ? "You" : "Assistant"}</small>
+            <small>{message.role === "user" ? username : "Assistant"}</small>
             {message.parts.map((part, index) =>
               part.type === "text" ? (
                 <Markdown remarkPlugins={[remarkGfm]} components={{ table: ({ children }) => <div className="chat-table"><table>{children}</table></div> }} key={index}>{part.text}</Markdown>

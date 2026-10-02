@@ -71,6 +71,10 @@ async def initialize():
         if conn.dialect.name == "postgresql":
             await conn.execute(text("SELECT pg_advisory_xact_lock(734823109)"))
         await conn.run_sync(metadata.create_all)
+        if conn.dialect.name == "postgresql":
+            from search import SEARCH_SCHEMA
+            await conn.execute(text(SEARCH_SCHEMA))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS notebooks_search_idx ON notebooks USING gin(search_vector)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS notebooks_owner_id_idx ON notebooks(owner_id)"))
 
 

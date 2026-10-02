@@ -62,6 +62,8 @@ Tool cards distinguish argument generation from execution and errors. Code previ
 
 ## Chat Markdown and model label
 
+User messages display the notebook owner’s username, including in public read-only history.
+
 Chat renders GitHub-flavored Markdown tables in horizontally scrollable containers. The server reports the configured model ID, which is displayed below the chat toolbar.
 
 [[backend/config.py#chat_model]] supplies both inference and [[backend/auth.py#me]] so environment overrides cannot leave a hardcoded model label behind. A regression verifies both the default and override values. Browser checks cover table headers, cells, and narrow-panel overflow.

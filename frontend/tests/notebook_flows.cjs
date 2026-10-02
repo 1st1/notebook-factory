@@ -14,6 +14,8 @@ const nb={nbformat:4,nbformat_minor:5,metadata:{},cells:[{id:'cell',cell_type:'m
 const server=http.createServer(async(req,res)=>{
  const u=new URL(req.url,'http://localhost');let raw='';for await(const c of req)raw+=c;const body=raw?JSON.parse(raw):{};
  res.setHeader('Content-Type','application/json');const id=u.pathname.split('/')[3];
+ if(u.pathname==='/api/search')return res.end(JSON.stringify(u.searchParams.get('q')==='quantum'?[notebooks.find(n=>n.id==='two')]:[]));
+ if(u.pathname==='/api/workspace')return res.end(JSON.stringify({users:workspaceUsers,notebooks}));
  if(u.pathname==='/api/users')return res.end(JSON.stringify(workspaceUsers));
  if(u.pathname==='/api/notebooks')return res.end(JSON.stringify(notebooks));
  if(u.pathname==='/api/auth/me')return res.end(JSON.stringify({can_edit:true,user:authProfile,configured:true}));
@@ -115,6 +117,19 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  await page.getByRole('textbox',{name:'Message'}).waitFor();
  assert.equal(await page.getByText('Public conversation from another user.',{exact:true}).isVisible(),false,'fork does not copy chat');
  assert.equal(notebooks.find(n=>n.id==='forked').owner_id,1);
+ await page.getByRole('textbox',{name:'Search notebooks'}).fill('quantum');
+ await page.clock.fastForward(300);
+ await page.getByRole('button',{name:'Notebook two',exact:true}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Notebook one',exact:true}).count(),0,'uses server results even when title does not match query');
+ await page.getByRole('textbox',{name:'Search notebooks'}).fill('');
+ await page.getByRole('button',{name:'Notebook one',exact:true}).waitFor();
+ const beforeRefreshHeading=await page.locator('h1').textContent();
+ const beforeRefreshBoots=JSON.stringify(boots);
+ notebooks.push({id:'periodic-new',title:'Periodic new notebook',owner_id:1,revision:1,updated_at:2});
+ await page.clock.fastForward(30_000);
+ await page.getByRole('button',{name:'Periodic new notebook',exact:true}).waitFor();
+ assert.equal(await page.locator('h1').textContent(),beforeRefreshHeading,'refresh preserves selected notebook');
+ assert.equal(JSON.stringify(boots),beforeRefreshBoots,'refresh does not remount editors');
  authProfile={login:'amy',user_id:2};
  const amyPage=await browser.newPage();await amyPage.goto('http://127.0.0.1:5187/?notebook=other');
  await amyPage.getByRole('textbox',{name:'Message'}).waitFor();
