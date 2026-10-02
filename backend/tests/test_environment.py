@@ -9,7 +9,8 @@ import sandbox_environment as environment
 
 
 # @lat: [[editing#Prepared environment tests]]
-async def test_editor_restores_dependencies_and_injects_current_document(monkeypatch):
+@pytest.mark.parametrize("owner_id", [1, 2])
+async def test_editor_restores_dependencies_and_injects_current_document(monkeypatch, owner_id):
     batch = SimpleNamespace(write_text=MagicMock())
     batch_context = AsyncMock()
     batch_context.__aenter__.return_value = batch
@@ -41,7 +42,9 @@ async def test_editor_restores_dependencies_and_injects_current_document(monkeyp
 
     monkeypatch.setattr(editor, "session", session)
     monkeypatch.setattr(editor.httpx, "AsyncClient", http_client)
-    result = await editor._start_runtime()
+    result = await editor._start_runtime({"id": owner_id, "sandbox_name": "nf-user-test"})
+    assert create.call_args.kwargs["name"] == "nf-user-test"
+    assert editor.sandbox.get_or_create_drive.call_args.kwargs["name"] == editor.workspace_drive_name("shared:" + editor.APP_URL if owner_id == 1 else "user:nf-user-test")
     assert "source" not in create.call_args.kwargs
     assert create.call_args.kwargs["mounts"]["/vercel"] is drive
     assert create.call_args.kwargs["mounts"]["/notebook-base"].mode == "snapshot"

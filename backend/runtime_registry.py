@@ -1,4 +1,4 @@
-"""Cross-function coordination for the single shared notebook runtime."""
+"""Cross-function coordination for the per-user shared notebook runtimes."""
 
 import json
 import secrets

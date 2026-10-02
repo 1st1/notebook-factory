@@ -6,8 +6,11 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from itsdangerous import BadSignature, URLSafeTimedSerializer
+from sqlalchemy import select
 
+from accounts import enroll, from_session
 from config import APP_URL, SECRET, chat_model
+from db import engine, notebooks
 
 router = APIRouter(prefix="/api/auth")
 signer = URLSafeTimedSerializer(SECRET)
@@ -21,14 +24,25 @@ def user(request: Request):
         return None
 
 
-def require_owner(request: Request):
+async def require_user(request: Request):
     current = user(request)
     if not current:
         raise HTTPException(401, "Sign in with GitHub first")
-    if current.get("login", "").lower() != "1st1":
-        raise HTTPException(403, "Only 1st1 can edit notebooks")
     if request.headers.get("origin") != APP_URL:
         raise HTTPException(403, "Invalid request origin")
+    return await from_session(current)
+
+
+async def require_owner(request: Request):
+    current = await require_user(request)
+    id = request.path_params.get("id")
+    if id:
+        async with engine.connect() as conn:
+            owner_id = await conn.scalar(select(notebooks.c.owner_id).where(notebooks.c.id == id))
+        if owner_id is None:
+            raise HTTPException(404, "Notebook not found")
+        if owner_id != current["id"]:
+            raise HTTPException(403, "Only the notebook owner can edit it. Fork it to make your own copy.")
     return current
 
 
@@ -47,12 +61,13 @@ def cookie(response, name, value, age):
 @router.get("/me")
 async def me(request: Request):
     current = user(request)
-    if current and not current.get("avatar_url") and isinstance(current.get("id"), int):
-        current = {**current, "avatar_url": f"https://avatars.githubusercontent.com/u/{current['id']}?s=64"}
+    if current:
+        account = await from_session(current)
+        current = {"id": account["github_id"], "user_id": account["id"], "login": account["login"], "avatar_url": account["avatar_url"]}
     return {
         "user": current,
         "chat_model": chat_model(),
-        "can_edit": bool(current and current.get("login", "").lower() == "1st1"),
+        "can_edit": bool(current),
         "configured": bool(os.getenv("GITHUB_CLIENT_ID") and os.getenv("GITHUB_CLIENT_SECRET")),
     }
 
@@ -109,6 +124,7 @@ async def callback(request: Request, code: str = "", state: str = ""):
         if profile.status_code != 200:
             raise HTTPException(502, "Could not verify your GitHub account")
     data = profile.json()
+    await enroll(data)
     response = RedirectResponse(APP_URL, status_code=303)
     cookie(
         response,

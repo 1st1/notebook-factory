@@ -43,14 +43,14 @@ def workspace_drive_name(notebook_id: str):
     return "nf-workspace-" + hashlib.sha256(notebook_id.encode()).hexdigest()[:32]
 
 
-async def _start_runtime(report=lambda kind, message: None):
+async def _start_runtime(owner, report=lambda kind, message: None):
     token = secrets.token_urlsafe(32)
-    name = shared_runtime_name()
+    name = shared_runtime_name(owner)
     async with session():
         environment = prepared()
         report("progress", "Attaching your notebook workspace…")
         drive = await sandbox.get_or_create_drive(
-            name=workspace_drive_name("shared:" + APP_URL), region=environment["region"],
+            name=workspace_drive_name("shared:" + APP_URL if owner["id"] == 1 else "user:" + name), region=environment["region"],
             max_size_bytes=4 * 1024**3,
         )
         for attempt in range(30):
@@ -174,8 +174,8 @@ async def _start_runtime(report=lambda kind, message: None):
             raise
 
 
-def shared_runtime_name():
-    return "nf-shared-" + hashlib.sha256(APP_URL.encode()).hexdigest()[:24]
+def shared_runtime_name(owner):
+    return owner["sandbox_name"]
 
 
 async def _alive(current):
@@ -210,11 +210,18 @@ async def _extend(instance):
             await current.extend_execution_time_limit(max(30, int(900 - remaining)))
 
 
-async def start(source: str, report=lambda kind, message: None, *, notebook_id: str):
-    key = shared_runtime_name()
+async def start(source: str, report=lambda kind, message: None, *, notebook_id: str, owner):
+    key = shared_runtime_name(owner)
     async with runtime_lease(key) as claim, session():
         report("progress", "Connecting to the shared Python runtime…")
         current = await load_runtime(key)
+        if owner["id"] == 1 and not (current or {}).get("legacy_retired"):
+            # Retire the pre-multi-user VM before starting the original owner's VM.
+            legacy_key = "nf-shared-" + hashlib.sha256(APP_URL.encode()).hexdigest()[:24]
+            await _destroy_runtime({"name": legacy_key})
+            if current:
+                current["legacy_retired"] = True
+                await store_runtime(key, claim, current)
         pending = (current or {}).get("pending_deletions", [])
         if current and current.get("generation") == generation() and await _alive(current):
             instance = await sandbox.get_sandbox(name=current["name"])
@@ -222,8 +229,9 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
         else:
             # The stable name also recovers a runtime created before an interrupted DB write.
             await _destroy_runtime({"name": key})
-            current = await _start_runtime(report)
+            current = await _start_runtime(owner, report)
             current["pending_deletions"] = pending
+            current["legacy_retired"] = True
             await store_runtime(key, claim, current)
             instance = await sandbox.get_sandbox(name=current["name"])
         for folder_to_delete in pending:
@@ -308,9 +316,9 @@ async def stop(editor: dict):
             deleted.raise_for_status()
 
 
-async def delete_workspace(notebook_id: str):
+async def delete_workspace(notebook_id: str, *, owner):
     # Record deletion first, so an expired VM cannot leave abandoned notebook files.
-    key = shared_runtime_name()
+    key = shared_runtime_name(owner)
     folder = "notebooks/" + hashlib.sha256(notebook_id.encode()).hexdigest()
     async with runtime_lease(key) as claim, session():
         current = await load_runtime(key) or {}
@@ -337,6 +345,6 @@ async def delete_workspace(notebook_id: str):
 
 
 async def keep_alive(editor: dict):
-    async with runtime_lease(shared_runtime_name()), session():
+    async with runtime_lease(editor["name"]), session():
         instance = await sandbox.get_sandbox(name=editor["name"])
         await _extend(instance)

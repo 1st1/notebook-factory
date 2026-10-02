@@ -1,11 +1,4 @@
-import os
-import tempfile
 from unittest.mock import AsyncMock
-
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///" + tempfile.mktemp(suffix=".db")
-os.environ["APP_URL"] = "http://localhost:5173"
-os.environ["SESSION_SECRET"] = "test-secret-with-at-least-32-characters"
-os.environ.pop("VERCEL", None)
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,7 +17,7 @@ def client(monkeypatch):
 
 
 def authenticate(client, login="1st1"):
-    client.cookies.set(COOKIE, signer.dumps({"login": login, "id": 1}, salt="session"))
+    client.cookies.set(COOKIE, signer.dumps({"login": login, "id": 1 if login == "1st1" else 1000 + sum((i + 1) * ord(c) for i, c in enumerate(login))}, salt="session"))
     client.headers["origin"] = "http://localhost:5173"
 
 
@@ -50,9 +43,13 @@ def create(client):
     ],
 )
 def test_mutations_require_owner_and_origin(client, path, body):
+    if "/missing/" in path:
+        notebook_id = create(client)
+        path = path.replace("/missing/", f"/{notebook_id}/")
+        client.cookies.clear()
     assert client.post(path, json=body).status_code == 401
     authenticate(client, "someone-else")
-    assert client.post(path, json=body).status_code == 403
+    assert client.post(path, json=body).status_code == (201 if path == "/api/notebooks" else 403)
     authenticate(client)
     client.headers["origin"] = "https://attacker.example"
     assert client.post(path, json=body).status_code == 403
@@ -67,9 +64,10 @@ def test_invalid_sessions_and_oauth_state(client):
 # @lat: [[architecture#Persistence tests]]
 def test_drafts_publish_close_and_reopen(client, monkeypatch):
     id = create(client)
+    from accounts import sandbox_name
     first = {
         "generation": main.editor.generation(),
-        "name": "sandbox-a",
+        "name": sandbox_name("1st1", 1),
         "url": "https://example.test/secret/doc/tree/notebook.ipynb",
         "token": "secret",
     }
@@ -161,7 +159,7 @@ def test_simultaneous_editor_start_is_serialized(client, monkeypatch):
     id = create(client)
     entered, release = Event(), Event()
 
-    async def start(source, *, notebook_id):
+    async def start(source, *, notebook_id, owner):
         entered.set()
         await anyio.to_thread.run_sync(lambda: release.wait(5))
         return {"name": "one", "token": "one", "url": "https://example.test"}
@@ -219,14 +217,15 @@ def test_setup_stream_progress_ready_and_reuse(client, monkeypatch):
     import json
 
     id = create(client)
+    from accounts import sandbox_name
     result = {
         "generation": main.editor.generation(),
-        "name": "streamed",
+        "name": sandbox_name("1st1", 1),
         "url": "https://example.test/editor",
         "token": "t",
     }
 
-    async def start(source, report, *, notebook_id):
+    async def start(source, report, *, notebook_id, owner):
         report("progress", "Installing Python and JupyterLab…")
         report("log", "Installing ipykernel\n")
         return result
@@ -513,7 +512,8 @@ def test_chat_requires_active_editor(client):
 def test_deployment_replaces_editor_without_losing_saved_draft(client, monkeypatch):
     id = create(client)
     monkeypatch.setattr(main.editor, "generation", lambda: "deployment-a")
-    start = AsyncMock(return_value={"name": "old", "token": "old", "url": "https://example.test"})
+    from accounts import sandbox_name
+    start = AsyncMock(return_value={"name": sandbox_name("1st1", 1), "token": "old", "url": "https://example.test"})
     read = AsyncMock(return_value=new_notebook("Stale disk file"))
     stop = AsyncMock()
     monkeypatch.setattr(main.editor, "start", start)
@@ -599,11 +599,11 @@ def test_chat_history_survives_discard_and_blocks_stale_writes(client, monkeypat
     assert client.post(path, json={"token": "two"}).json()["messages"] == []
     assert client.put(path, content="x" * 1_000_001).status_code == 413
     client.headers["origin"] = "https://evil.test"
-    assert client.post(path, json={"token": "two"}).status_code == 403
+    assert client.post(path, json={"token": "two"}).status_code == 200
     authenticate(client, "someone-else")
-    assert client.post(path, json={"token": "two"}).status_code == 403
+    assert client.post(path, json={"token": "two"}).status_code == 200
     client.cookies.clear()
-    assert client.post(path, json={"token": "two"}).status_code == 401
+    assert client.post(path, json={"token": "two"}).status_code == 200
 
 
 # @lat: [[editing#Expired Sandbox persistence tests]]
@@ -645,7 +645,8 @@ def test_delete_removes_notebook_and_stops_editor(client, monkeypatch):
     assert client.post(f"/api/notebooks/{id}/delete", json={}).status_code == 200
     stop.assert_awaited_once_with(current)
     remove.assert_awaited_once_with(id)
-    delete_workspace.assert_awaited_once_with(id)
+    assert delete_workspace.await_args.args == (id,)
+    assert delete_workspace.await_args.kwargs["owner"]["id"] == 1
     assert all(item["id"] != id for item in client.get("/api/notebooks").json())
     for suffix in ("render", "download"):
         assert client.get(f"/api/notebooks/{id}/{suffix}").status_code == 404
@@ -739,7 +740,7 @@ def test_view_chat_and_history_do_not_require_or_start_editor(client, monkeypatc
     start.assert_not_awaited()
     client.cookies.clear()
     assert client.post(f"/api/notebooks/{id}/chat", json={"messages": messages}).status_code == 401
-    assert client.post(f"/api/notebooks/{id}/chat-history", json={}).status_code == 401
+    assert client.post(f"/api/notebooks/{id}/chat-history", json={}).status_code == 200
 
 
 # @lat: [[editing#Automatic recovery tests]]
@@ -831,3 +832,51 @@ def test_autopublish_skips_unchanged_documents_and_retries_blob(client, monkeypa
     upload.side_effect = None
     assert client.post(f"/api/notebooks/{id}/save", json={**body, "source": newer}).json()["changed"]
     assert client.portal.call(main.get_notebook, id)["published"] == newer
+
+
+def test_multiuser_ownership_readonly_history_and_fork_without_chat(client, monkeypatch):
+    import json
+
+    from sqlalchemy import update
+
+    original_id = create(client)
+    owner = client.get("/api/auth/me").json()["user"]
+    messages = [{"id": "u", "role": "user", "parts": [{"type": "text", "text": "Original conversation"}]}]
+    assert client.put(f"/api/notebooks/{original_id}/chat-history", json={"revision": 0, "messages": messages}).status_code == 200
+    original = client.portal.call(main.get_notebook, original_id)
+
+    async def put_private_source():
+        async with main.engine.begin() as conn:
+            await conn.execute(update(main.notebooks).where(main.notebooks.c.id == original_id).values(
+                source=new_notebook("Unpublished draft"),
+                editor=json.dumps({"name": "private", "token": "known-token", "url": "https://secret.test"}),
+            ))
+    client.portal.call(put_private_source)
+    authenticate(client, "new-person")
+    account = client.get("/api/auth/me").json()
+    assert account["can_edit"] is True
+    assert account["user"]["user_id"] != owner["user_id"]
+    mine = client.post("/api/notebooks", json={"title": "Mine"}).json()
+    assert mine["owner_id"] == account["user"]["user_id"]
+    for action, body in [
+        ("editor", {}), ("editor-status", {"token": "known-token"}),
+        ("save", {"token": "known-token", "source": original["source"]}),
+        ("close", {"token": "known-token"}), ("delete", {}), ("discard", {"token": "known-token"}),
+        ("rename", {"token": "known-token", "title": "Hijacked"}),
+        ("chat", {"token": "known-token", "messages": messages}),
+    ]:
+        assert client.post(f"/api/notebooks/{original_id}/{action}", json=body).status_code == 403
+    assert client.put(f"/api/notebooks/{original_id}/chat-history", json={"revision": 1, "messages": []}).status_code == 403
+    assert client.post(f"/api/notebooks/{original_id}/chat-history", json={"limit": 50}).json()["messages"][0]["id"] == "u"
+    assert client.get(f"/api/notebooks/{original_id}/download").text == original["published"]
+    fork = client.post(f"/api/notebooks/{original_id}/fork").json()
+    row = client.portal.call(main.get_notebook, fork["id"])
+    assert row["owner_id"] == account["user"]["user_id"]
+    assert row["source"] == row["published"] == original["published"]
+    assert row["chat_history"] is None and row["chat_revision"] == 0 and row["editor"] is None
+    listing = client.get("/api/users").json()
+    assert [u["login"] for u in listing] == sorted(u["login"] for u in listing)
+    assert all(set(u) == {"id", "login", "avatar_url"} for u in listing)
+    client.cookies.clear()
+    assert client.post(f"/api/notebooks/{original_id}/fork").status_code == 401
+    assert client.post(f"/api/notebooks/{original_id}/chat-history", json={}).status_code == 200

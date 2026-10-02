@@ -1,12 +1,12 @@
 # Notebook Factory
 
-A public Python notebook library with GitHub-owner-only editing. React and FastAPI run as Vercel Services; temporary JupyterLab environments run in Vercel Sandbox.
+A public Python notebook library with GitHub sign-in, per-user ownership, read-only community browsing, and notebook forks. React and FastAPI run as Vercel Services; temporary JupyterLab environments run in Vercel Sandbox.
 
 ## Overall architecture on Vercel
 
 Vercel hosts the web and API services, isolates Python execution in Sandbox, serves published artifacts through Blob, and routes model requests through AI Gateway. Neon Postgres holds durable application state.
 
-The application and publication path uses two services in one Vercel deployment. API calls share the app origin; published HTML is fetched directly from Blob. GitHub OAuth authenticates the owner through the API.
+The application and publication path uses two services in one Vercel deployment. API calls share the app origin; published HTML is fetched directly from Blob. GitHub OAuth enrolls users through the API; each notebook has one owner.
 
 ```mermaid
 flowchart TB
@@ -50,7 +50,7 @@ The two FastAPI nodes represent the same backend service. The dependency drive c
 | Platform component | Role in this app | Implementation and details |
 | --- | --- | --- |
 | Vercel Services and Functions | Deploy frontend and backend together under one origin; FastAPI handles authentication, metadata, persistence, publication, and streamed setup/chat responses. | [vercel.json](../vercel.json), [[backend/main.py]], [[architecture#Services]] |
-| Vercel Sandbox | Run notebook Python and JupyterLab in one shared non-persistent VM with separate notebook kernels, a durable writable workspace drive, and a read-only dependency drive. The backend injects the current private draft and fresh editor assets. | [[backend/editor.py#start]], [[editing#Prepared dependency environment]] |
+| Vercel Sandbox | Run notebook Python and JupyterLab in one non-persistent VM per user with separate notebook kernels, a durable writable workspace drive, and a read-only dependency drive. The backend injects the current private draft and fresh editor assets. | [[backend/editor.py#start]], [[editing#Prepared dependency environment]] |
 | Vercel Blob | Serve immutable published HTML through the CDN and store the prepared font bundle used to build dependency drives. | [[backend/publication.py#upload]], [[deployment#Published HTML in Blob]], [[editing#Plot font fallback]] |
 | Vercel AI Gateway and AI SDK | Route configured model inference and stream assistant responses; browser tools apply cell edits and execution through the authenticated Jupyter bridge. | [[backend/chat.py#stream]], [[frontend/src/Chat.tsx#Chat]], [[chat#Live document tools]] |
 | Vercel deployment identity | Supply OIDC for backend Sandbox and Gateway access. Blob uses its backend-only read/write token; database and OAuth credentials remain backend configuration. | [[backend/main.py#headers]], [[deployment#Environment configuration]] |
@@ -61,9 +61,9 @@ The two FastAPI nodes represent the same backend service. The dependency drive c
 Public reading, private editing, and AI assistance share the API and database, while notebook execution and artifact delivery use separate Vercel services.
 
 1. **Read:** the browser loads the React app and public notebook metadata, then fetches published HTML directly from Blob into a sandboxed iframe. The API render endpoint supplies a fallback; public viewing does not start a Sandbox or execute cells.
-2. **Edit:** GitHub OAuth establishes the owner session. The API acquires a database lease and opens or reuses a Sandbox. The editor iframe connects directly to JupyterLab, including kernel WebSockets. The browser exports its live document through the bridge and sends autosaved private drafts to the API for Postgres persistence.
-3. **Publish:** Save & exit exports the document, renders HTML in the backend, uploads it to Blob, and commits the published source, fallback HTML, artifact URL, and revision together in Postgres. Publication does not deploy the app. The notebook kernel shuts down after persistence; the shared VM stays warm.
-4. **Assist:** the browser sends an authenticated chat turn to FastAPI, which streams inference through AI Gateway. Notebook tool calls return to the browser and act on the live Jupyter document; rename calls the authenticated API. Private chat history is saved separately in Postgres.
+2. **Edit:** GitHub OAuth establishes the owner session. The API acquires a database lease and opens or reuses a Sandbox. The editor iframe connects directly to JupyterLab, including kernel WebSockets. The browser exports its live document through the bridge and sends autosaved documents to the API for Postgres persistence and automatic publication.
+3. **Publish:** autosaves persist the source first, then render and upload only changed documents to Blob. Source, fallback HTML, artifact URL, and revision switch together. Publication does not close the editor or deploy the app.
+4. **Assist:** the browser sends an authenticated chat turn to FastAPI, which streams inference through AI Gateway. Notebook tool calls return to the browser and act on the live Jupyter document; rename calls the authenticated API. Read-only community chat history is saved separately in Postgres.
 
 ### Deployment and lifetime boundaries
 
@@ -73,13 +73,13 @@ Application deployments, prepared dependencies, live execution sessions, and dur
 
 [[backend/editor.py#generation]] ties editor reuse to the creating deployment so a replacement receives current bridge assets. The shared dependency drive contains no private notebooks or editor tokens. Live Sandboxes are disposable: notebook documents and saved outputs survive in Postgres, while extra installed packages and side files survive on the shared workspace drive. Kernel memory does not persist. See [[editing#Deployment generations]] and [[editing#Closing and recovery]].
 
-Database leases coordinate editor mutations across Function instances. Shutdown and deletion cleanup use response background tasks rather than a durable queue. Public Blob artifacts contain only published content; drafts, chat, and editor capabilities stay behind owner authorization. See [[architecture#Authentication]] and [[architecture#Notebook deletion]].
+Database leases coordinate editor mutations across Function instances. Shutdown and deletion cleanup use response background tasks rather than a durable queue. Public Blob artifacts contain only published content; drafts and editor capabilities stay behind notebook-owner authorization; saved chat is readable publicly. See [[architecture#Authentication]] and [[architecture#Notebook deletion]].
 
 ## Product scope
 
-[[frontend/src/main.tsx]] provides notebook navigation, title search, creation, public rendering, downloads, and an embedded editor for GitHub user 1st1.
+[[frontend/src/main.tsx]] provides notebook navigation, title search, creation, public rendering, downloads, and an embedded editor for each notebook owner.
 
-The selected notebook is reflected in the `notebook` URL query parameter. Public readers see published content; owner edits remain private until Save & exit. Creation immediately publishes the starter notebook at revision 1. There is no separate unpublished-notebook state.
+The selected notebook is reflected in the `notebook` URL query parameter. Public readers see published content; changed documents are published automatically when autosaved. Creation immediately publishes the starter notebook at revision 1. There is no separate unpublished-notebook state.
 
 Titles are set at creation and can be changed through [[chat#Notebook renaming]]. The owner can delete notebooks through [[architecture#Notebook deletion]]. Notebook upload, revision history, and collaborative editing are not implemented. A revision is a counter, not a stored historical snapshot. [[editing]] describes the editor lifecycle.
 
@@ -99,17 +99,17 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 
 | Fields | Meaning |
 | --- | --- |
-| `id`, `title` | UUID identity and mutable public display title |
+| `id`, `owner_id`, `title` | UUID identity, owning user slot, and mutable public display title |
 | `source` | Latest durable private draft, including saved cell outputs |
 | `published` | Notebook document exposed by public render and download endpoints |
 | `render_url` | Immutable public Blob URL for rendered HTML; included in notebook metadata |
 | `published_html` | Pre-rendered HTML for the same published revision; nullable for legacy rows |
 | `created_at`, `updated_at`, `revision` | Creation/publication metadata; draft saves do not change publication time |
 | `editor` | Nullable JSON containing shared Sandbox name, unique document path, editor URL, and bridge token |
-| `chat_history`, `chat_revision` | Private conversation and optimistic concurrency counter |
+| `chat_history`, `chat_revision` | Publicly readable conversation with owner-only writes and optimistic concurrency counter |
 | `claim`, `claim_until` | Atomic operation lease shared across function instances |
 
-[[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. Initialization also adds the nullable published HTML column to existing tables. This targeted upgrade is not a general migration framework. Postgres retains up to two idle connections with three overflow connections, pre-ping checks, and five-minute recycling to avoid repeating connection setup on every request. SQLite tests use NullPool. Application shutdown disposes the pool.
+[[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. Initialization adds missing publication/chat fields, creates users, reserves the original account, and assigns existing notebooks to owner slot 1 with a foreign key and owner index. This targeted upgrade is not a general migration framework. Postgres retains up to two idle connections with three overflow connections, pre-ping checks, and five-minute recycling to avoid repeating connection setup on every request. SQLite tests use NullPool. Application shutdown disposes the pool.
 
 [[backend/config.py]] normalizes conventional Postgres URLs for asyncpg, maps `sslmode` to `ssl`, and removes libpq's `channel_binding` option. Deployment startup rejects missing or non-Postgres database configuration.
 
@@ -125,11 +125,11 @@ The rendered iframe and API response both enforce sandboxing. The CSP blocks net
 
 ## Authentication
 
-[[backend/auth.py]] uses GitHub OAuth and signed, expiring cookies. [[backend/auth.py#require_owner]] enforces the 1st1 login and exact application Origin on every notebook mutation.
+[[backend/auth.py]] uses GitHub OAuth and signed, expiring cookies. [[backend/auth.py#require_user]] admits signed-in GitHub users; [[backend/auth.py#require_owner]] additionally checks notebook ownership on every notebook mutation. Both require the exact application Origin.
 
 OAuth requests `read:user`. A signed state cookie expires after ten minutes; the signed session expires after seven days. Cookies are HttpOnly, SameSite=Lax, and Secure on HTTPS. The access token is used to fetch identity, not persisted in the session. The session retains GitHub’s avatar URL for the sidebar; older sessions derive the avatar URL from the stored account ID without requiring a new login. The sidebar falls back to the login initial if the image is missing or fails to load.
 
-The owner check is case-insensitive on the GitHub login, not pinned to a numeric account ID. The frontend hides editing controls for other users, while the backend independently rejects unauthorized requests. There is no development authentication bypass.
+Ownership uses the registered user slot bound to a unique numeric GitHub ID. Username changes update display identity without changing ownership or the stored Sandbox name. The frontend hides editing controls for other users, while the backend rejects cross-owner calls even with a valid editor token. There is no development authentication bypass.
 
 Public notebook metadata excludes drafts, editor capabilities, and leases. Responses use no-store caching and no-referrer headers. Logout requires the configured Origin, and the UI disables logout while an editor is open.
 
@@ -139,8 +139,12 @@ Public notebook metadata excludes drafts, editor capabilities, and leases. Respo
 
 | Route | Contract |
 | --- | --- |
-| `GET /api/notebooks` | Public metadata ordered by publication update time |
-| `POST /api/notebooks` | Owner creates a starter notebook from a nonblank title, returning 201 |
+| `GET /api/notebooks` | Public metadata including owner ID, ordered by publication update time |
+| `GET /api/users` | Alphabetical public user IDs, usernames, and avatars |
+| `POST /api/notebooks/{id}/fork` | Enrolled caller copies published notebook content into a new owned notebook, without chat or editor state |
+| `POST /api/notebooks/{id}/chat-history` | Public read-only history, optionally the latest 50 messages |
+| `PUT /api/notebooks/{id}/chat-history` | Owner-only revision-checked conversation save |
+| `POST /api/notebooks` | Enrolled user creates a starter notebook from a nonblank title, returning 201 |
 | `GET /api/notebooks/{id}/render` | Published HTML with isolation headers |
 | `GET /api/notebooks/{id}/download` | Published `.ipynb` attachment |
 | `POST /api/notebooks/{id}/editor` | Owner opens/reuses an editor; JSON or event stream depending on Accept |
@@ -197,3 +201,24 @@ The owner sees a red outlined trash button in the notebook header. Confirmation 
 ## Notebook deletion tests
 
 Owner deletion removes public reads and sidebar metadata, schedules Sandbox and artifact cleanup, and returns not found for repeated deletion. Mutation authorization coverage rejects anonymous users, other users, and cross-origin requests.
+
+
+## User enrollment and capacity
+
+[[backend/accounts.py#enroll]] admits at most 300 users, while the users table independently enforces an absolute 500-row ceiling. Existing registered users can sign in at capacity.
+
+Postgres enrollment uses a transaction advisory lock around identity lookup, capacity check, and slot allocation. The table has a unique primary-key slot constrained to 1–500, making a 501st row impossible even for direct SQL inserts. GitHub IDs and display logins are unique. Slot 1 is reserved for the legacy 1st1 workspace and can be claimed only by its verified OAuth identity. Existing signed sessions enroll through the same path.
+
+[[backend/db.py#initialize]] migrates existing notebook ownership to slot 1. User Sandbox names are generated from the enrollment username and an app/slot hash, then stored immutably so GitHub renames do not create a second runtime.
+
+## Community navigation and forks
+
+The sidebar expands the current user's avatar/name group first, followed by other users alphabetically and collapsed by default. Search expands matching groups; notebook selection retains background editors and agent sessions.
+
+Other users' notebooks and saved conversations are read-only, including for anonymous visitors. Only the owner can start an editor, send chat messages, clear history, rename, save, or delete. [[backend/main.py#fork_notebook]] copies published cells, metadata, and outputs into a new notebook owned by the caller. It renders a separate Blob artifact and initializes empty chat/history and no editing session. Unsaved/private drafts are not copied.
+
+## Multi-user isolation tests
+
+[[backend/tests/test_accounts.py]] covers concurrent enrollment at capacity, hard database limits, stable GitHub identity, and migration of legacy ownership. API tests deny every cross-owner mutation and verify forks never copy chat, editor tokens, or private drafts.
+
+Runtime tests prove two notebooks owned by one user share a VM while a second user gets another VM. Browser checks verify default group expansion, alphabetical ordering, read-only chat/controls, and fork ownership with an empty conversation.

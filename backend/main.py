@@ -15,9 +15,9 @@ from vercel.headers import HeadersContext
 import chat
 import editor
 import publication
-from auth import require_owner
+from auth import require_owner, require_user
 from auth import router as auth_router
-from db import engine, initialize, notebooks, timestamp
+from db import engine, initialize, notebooks, timestamp, users
 from render import CONTENT_POLICY, new_notebook, render, validate
 
 log = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ async def get_notebook(id):
 def public(row):
     return {
         key: row[key]
-        for key in ("id", "title", "created_at", "updated_at", "revision", "render_url")
+        for key in ("id", "owner_id", "title", "created_at", "updated_at", "revision", "render_url")
     }
 
 
@@ -81,6 +81,7 @@ async def list_notebooks():
             await conn.execute(
                 select(
                     notebooks.c.id,
+                    notebooks.c.owner_id,
                     notebooks.c.title,
                     notebooks.c.created_at,
                     notebooks.c.updated_at,
@@ -92,8 +93,8 @@ async def list_notebooks():
         return [public(row) for row in rows]
 
 
-@app.post("/api/notebooks", dependencies=[Depends(require_owner)], status_code=201)
-async def create_notebook(body: CreateNotebook):
+@app.post("/api/notebooks", status_code=201)
+async def create_notebook(body: CreateNotebook, owner=Depends(require_user)):
     title = body.title.strip()
     if not title:
         raise HTTPException(422, "Enter a notebook title")
@@ -104,6 +105,7 @@ async def create_notebook(body: CreateNotebook):
     row = dict(
         id=id,
         title=title,
+        owner_id=owner["id"],
         source=source,
         published=source,
         published_html=html,
@@ -111,6 +113,33 @@ async def create_notebook(body: CreateNotebook):
         created_at=timestamp(),
         updated_at=timestamp(),
         revision=1,
+    )
+    async with engine.begin() as conn:
+        await conn.execute(notebooks.insert().values(**row))
+    return public(row)
+
+
+@app.get("/api/users")
+async def list_users():
+    async with engine.connect() as conn:
+        rows = (await conn.execute(select(
+            users.c.id, users.c.login, users.c.avatar_url,
+        ).order_by(users.c.login))).mappings()
+        return [dict(row) for row in rows]
+
+
+@app.post("/api/notebooks/{id}/fork", status_code=201)
+async def fork_notebook(id: str, owner=Depends(require_user)):
+    original = await get_notebook(id)
+    source = original["published"]
+    fork_id = str(uuid4())
+    html = await anyio.to_thread.run_sync(render, source)
+    row = dict(
+        id=fork_id, owner_id=owner["id"], title=original["title"],
+        source=source, published=source, published_html=html,
+        render_url=await publication.upload(fork_id, html),
+        created_at=timestamp(), updated_at=timestamp(), revision=1,
+        chat_history=None, chat_revision=0, editor=None,
     )
     async with engine.begin() as conn:
         await conn.execute(notebooks.insert().values(**row))
@@ -259,11 +288,13 @@ async def provision_editor(id, claim, report=None):
     generation = editor.generation()
     try:
         row = await get_notebook(id)
+        async with engine.connect() as conn:
+            owner = dict((await conn.execute(select(users).where(users.c.id == row["owner_id"]))).mappings().one())
         if row["editor"]:
             old = json.loads(row["editor"])
             try:
                 await editor.check_available(old)
-                if old.get("generation") == generation:
+                if old.get("generation") == generation and old.get("name") == editor.shared_runtime_name(owner):
                     return old
                 if report:
                     report("progress", "Updating the environment for this deployment…")
@@ -279,9 +310,9 @@ async def provision_editor(id, claim, report=None):
             await editor.stop(retired)
             retired = None
         created = (
-            await editor.start(row["source"], report, notebook_id=id)
+            await editor.start(row["source"], report, notebook_id=id, owner=owner)
             if report
-            else await editor.start(row["source"], notebook_id=id)
+            else await editor.start(row["source"], notebook_id=id, owner=owner)
         )
         created = {**created, "generation": generation}
         async with engine.begin() as conn:
@@ -418,13 +449,15 @@ async def delete_notebook(id: str, background_tasks: BackgroundTasks):
             await conn.execute(delete(notebooks).where(notebooks.c.id == id))
         if row["editor"]:
             background_tasks.add_task(stop_closed_editor, json.loads(row["editor"]))
-        background_tasks.add_task(delete_notebook_artifacts, id)
+        async with engine.connect() as conn:
+            owner = dict((await conn.execute(select(users).where(users.c.id == row["owner_id"]))).mappings().one())
+        background_tasks.add_task(delete_notebook_artifacts, id, owner)
     return {"deleted": True}
 
 
-async def delete_notebook_artifacts(id: str):
+async def delete_notebook_artifacts(id: str, owner):
     try:
-        await editor.delete_workspace(id)
+        await editor.delete_workspace(id, owner=owner)
     except Exception:
         log.exception("Could not remove notebook workspace drive for %s", id)
     try:
@@ -483,9 +516,9 @@ async def notebook_chat(id: str, request: Request):
     )
 
 
-@app.post("/api/notebooks/{id}/chat-history", dependencies=[Depends(require_owner)])
+@app.post("/api/notebooks/{id}/chat-history")
 async def load_chat_history(id: str, body: chat.HistoryLoadRequest):
-    row = (await checked_editor(id, body.token))[0] if body.token else await get_notebook(id)
+    row = await get_notebook(id)
     messages = json.loads(row["chat_history"] or "[]")
     if body.limit is not None:
         offset = max(0, len(messages) - body.limit)

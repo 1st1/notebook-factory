@@ -16,6 +16,7 @@ export function Chat({
   editor,
   getFrame,
   editorStarting,
+  readOnly,
   open,
   onClose,
   onTurnFinished,
@@ -30,6 +31,7 @@ export function Chat({
   onEnterEditing: () => Promise<void>;
   getFrame: () => HTMLIFrameElement | null;
   editorStarting: boolean;
+  readOnly: boolean;
   open: boolean;
   disabled: boolean;
   onClose: () => void;
@@ -87,7 +89,7 @@ export function Chat({
       count.current < 24 &&
       lastAssistantMessageIsCompleteWithToolCalls(options),
     onToolCall({ toolCall }) {
-      if (!userTurn.current) return;
+      if (readOnly || !userTurn.current) return;
       setPending((n) => n + 1);
       const work = tail.current.then(async () => {
         try {
@@ -231,7 +233,7 @@ export function Chat({
     },
   });
   const busy = status === "submitted" || status === "streaming" || pending > 0;
-  const history = useNotebookHistory(notebookId, null, messages, setMessages, busy);
+  const history = useNotebookHistory(notebookId, null, messages, setMessages, busy, readOnly);
   const wasBusy = useRef(false);
   useEffect(() => {
     if (wasBusy.current && !busy) onTurnFinished(notebookId);
@@ -264,7 +266,7 @@ export function Chat({
       <header className="surface-toolbar">
         <span><span className="green-dot" />NOTEBOOK CHAT</span>
         <span className="chat-header-actions">
-        <button
+        {!readOnly && <button
           className="icon-button"
           aria-label="New chat"
           title="New chat"
@@ -278,7 +280,7 @@ export function Chat({
           }}
         >
           <RotateCcw size={16} />
-        </button>
+        </button>}
         <button
           className="icon-button"
           aria-label="Close chat"
@@ -298,7 +300,7 @@ export function Chat({
         </div>}
         {history.loaded && !messages.length && (
           <p className="chat-hint">
-            {editor ? "Ask me to fix a bug, explain a cell, or plot a chart. Changes save and publish automatically." : "Ask about this notebook. I can read its published cells and outputs without starting an editor."}
+            {readOnly ? "No conversation yet." : editor ? "Ask me to fix a bug, explain a cell, or plot a chart. Changes save and publish automatically." : "Ask about this notebook. I can read its published cells and outputs without starting an editor."}
           </p>
         )}
         {messages.map((message) => (
@@ -350,10 +352,10 @@ export function Chat({
         )}
         <div ref={bottom} />
       </div>
-      <form
+      {readOnly ? <div className="chat-readonly">Read-only conversation · Fork this notebook to start your own.</div> : <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (!input.trim() || busy || disabled || history.blocking || !history.loaded || !!history.error) return;
+          if (readOnly || !input.trim() || busy || disabled || history.blocking || !history.loaded || !!history.error) return;
           userTurn.current = true;
           count.current = 0;
           halted.current = false;
@@ -408,7 +410,7 @@ export function Chat({
             A started cell keeps running even if you stop the reply.
           </small>
         )}
-      </form>
+      </form>}
     </aside>
   );
 }

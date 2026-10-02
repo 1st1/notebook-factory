@@ -2,7 +2,7 @@
 
 Chat is available while viewing or editing a notebook. Viewing answers use published content without a Sandbox; edits and execution require an editor, opened through explicit Yes/No consent.
 
-[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and validates an editor token when supplied. Tokenless owner requests use the restricted viewing prompt and tools. Cmd+Enter or Ctrl+Enter submits the chat composer; plain Enter inserts a newline. History is private, stored per notebook in Postgres, and restored when the editor reopens.
+[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and validates an editor token when supplied. Tokenless owner requests use the restricted viewing prompt and tools. Cmd+Enter or Ctrl+Enter submits the chat composer; plain Enter inserts a newline. History is stored per notebook in Postgres and readable by everyone; only its owner can send messages or save/clear history.
 
 ## Agent and streaming
 
@@ -70,11 +70,11 @@ Chat renders GitHub-flavored Markdown tables in horizontally scrollable containe
 
 [[frontend/src/useNotebookHistory.ts#useNotebookHistory]] loads the notebook conversation and saves it after each completed or stopped turn. History survives publishing, discarding edits, reconnecting, and reopening the editor.
 
-Selecting a notebook opens chat by default, including empty conversations. An immediate panel shell reserves the chat width while authentication and the lazy chat bundle load, then a spinner remains while history loads. Public readers lose the placeholder once authorization resolves; no private history loads before authorization. Manual dismissal is respected until the next notebook visit. Only the latest 50 saved messages are loaded; saves preserve the unseen prefix under the same revision check. New chat explicitly clears the entire conversation.
+Selecting a notebook opens chat by default, including empty conversations. An immediate panel shell reserves the chat width while authentication and the lazy chat bundle load, then a spinner remains while history loads. Public readers see the same panel in read-only mode, without a composer, New chat action, or tool execution. Manual dismissal is respected until the next notebook visit. Only the latest 50 saved messages are loaded; saves preserve the unseen prefix under the same revision check. New chat explicitly clears the entire conversation.
 
 History loading disables only chat controls, not sidebar navigation. Mounted conversations continue streaming, executing tools, and saving history in the background. Three animated green sidebar dots indicate active assistant work; awaiting editing consent is not active work.
 
-[[backend/main.py#load_chat_history]] and [[backend/main.py#save_chat_history]] require the owner and same-origin requests. The UI saves history independently of the editor token so a viewing-to-editing handoff preserves the same conversation; legacy token-bearing calls still validate that token. Revision checks reject concurrent stale writes, and private history is excluded from public notebook metadata and exports. Storage uses the existing one-megabyte and 160-message limits. New chat clears the saved conversation; it does not change notebook content.
+[[backend/main.py#load_chat_history]] is publicly readable. [[backend/main.py#save_chat_history]] requires the notebook owner and same-origin requests. The UI saves history independently of the editor token so a viewing-to-editing handoff preserves the same conversation; legacy token-bearing calls still validate that token. Revision checks reject concurrent stale writes, and history is fetched separately from public notebook metadata and exports. Storage uses the existing one-megabyte and 160-message limits. New chat clears the saved conversation; it does not change notebook content.
 
 [[backend/chat.py#history_messages]] marks unfinished tools as interrupted when storing them. Rehydration does not submit model requests or replay tools; the next user message begins a fresh turn. The prompt treats previous results as historical because notebook edits may have been discarded and kernel memory may have changed.
 
@@ -82,7 +82,7 @@ Navigation does not interrupt pending history saves. Save failures remain visibl
 
 ## Persistent history tests
 
-API regressions verify history survives draft discard and editor replacement, interrupted tools become inert history, stale revisions and tokens fail, New chat clears history, and public or unauthorized requests cannot read it.
+API regressions verify history survives draft discard and editor replacement, interrupted tools become inert history, stale revisions and tokens fail, New chat clears history, and non-owners cannot change it.
 
 Browser checks cover automatic opening of conversations, manual dismissal, background tool execution against the original iframe and token, restoration without replay, completed-turn persistence, save failure/retry, and clearing persisted history.
 
@@ -99,8 +99,8 @@ API coverage checks owner and Origin enforcement, stale editor tokens, blank and
 
 ## Viewing mode tests
 
-Owner chat works without an editor and does not start a Sandbox. Its tools are limited to reading the published document and requesting permission to enter editing; private history remains protected and revision-checked.
+Owner chat works without an editor and does not start a Sandbox. Its tools are limited to reading the published document and requesting permission to enter editing; history writes remain owner-protected and revision-checked.
 
 [[backend/chat.py#VIEW_TOOLS]] and [[backend/chat.py#VIEW_SYSTEM]] keep explanations in chat. [[frontend/src/Chat.tsx#Chat]] reads published cells and bounded text outputs from the download endpoint. The permission tool displays Yes/No buttons. No returns a declined result without starting anything. Yes awaits editor and document readiness, then continues the same turn using the active editor token and full editing tools. The assistant rereads the live draft because it may differ from published content. A request arriving during an already-authorized editor startup waits for that startup without asking again. If the editor connects while consent is displayed, the pending request resolves automatically and the redundant prompt disappears.
 
-Browser verification covers published context, no Sandbox on questions or refusal, accepting consent, retaining the conversation, and authenticated mode changes on continuation. Chat remains owner-only in both modes.
+Browser verification covers published context, no Sandbox on questions or refusal, accepting consent, retaining the conversation, and authenticated mode changes on continuation. Sending messages remains owner-only in both modes; other viewers can read saved conversations.

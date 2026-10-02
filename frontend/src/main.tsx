@@ -4,6 +4,9 @@ import {
   ArrowUpRight,
   BookOpen,
   Check,
+  ChevronDown,
+  ChevronRight,
+  GitFork,
   Download,
   Github,
   LoaderCircle,
@@ -21,13 +24,15 @@ const Chat = lazy(() => import("./Chat").then(module => ({ default: module.Chat 
 
 type Notebook = {
   id: string;
+  owner_id: number;
   title: string;
   updated_at: number;
   revision: number;
   render_url?: string | null;
 };
+type WorkspaceUser = { id: number; login: string; avatar_url?: string };
 type Auth = {
-  user: { login: string; avatar_url?: string } | null;
+  user: { login: string; user_id: number; avatar_url?: string } | null;
   can_edit: boolean;
   configured: boolean;
   chat_model?: string;
@@ -123,7 +128,7 @@ function PublishedNotebook({ notebook, version }: { notebook: Notebook; version:
   />;
 }
 
-const WORKSPACE_CACHE = "notebook-factory:public-workspace:v1";
+const WORKSPACE_CACHE = "notebook-factory:public-workspace:v2";
 function cachedNotebooks(): Notebook[] | null {
   try {
     const cached = JSON.parse(sessionStorage.getItem(WORKSPACE_CACHE) || "null");
@@ -152,6 +157,8 @@ function App() {
     configured: false,
   });
   const [authLoaded, setAuthLoaded] = useState(false);
+  const [users, setUsers] = useState<WorkspaceUser[]>([]);
+  const [expandedUsers, setExpandedUsers] = useState<Record<number, boolean>>({});
   const [cached] = useState(cachedNotebooks);
   const [notebooks, setNotebooks] = useState<Notebook[]>(cached || []);
   const [selected, setSelected] = useState<string | null>(
@@ -213,6 +220,12 @@ function App() {
   const activeEditor = editor?.connected ? editor : null;
   const editorReady = !!activeEditor?.ready;
   const notebook = notebooks.find((n) => n.id === selected);
+  const ownsNotebook = !!notebook && !!auth.user && notebook.owner_id === auth.user.user_id;
+  const workspaceUsers = auth.user
+    ? [...users.filter(u => u.id !== auth.user!.user_id), { id: auth.user.user_id, login: auth.user.login, avatar_url: auth.user.avatar_url }] : users;
+  const sortedUsers = [...workspaceUsers].sort((a, b) =>
+    a.id === auth.user?.user_id ? -1 : b.id === auth.user?.user_id ? 1 : a.login.localeCompare(b.login),
+  );
 
   function putEditor(id: string, value: LiveEditor | null) {
     const next = { ...editorsRef.current };
@@ -251,6 +264,7 @@ function App() {
         } catch { /* Rendering must not depend on browser storage. */ }
       }),
       api<Auth>("/auth/me").then(setAuth).finally(() => setAuthLoaded(true)),
+      api<WorkspaceUser[]>("/users").then(setUsers),
     ]);
   }, []);
   useEffect(() => {
@@ -529,11 +543,6 @@ function App() {
         </div>
         <button
           className="new-button"
-          title={
-            auth.user && !auth.can_edit
-              ? "Only 1st1 can create notebooks"
-              : undefined
-          }
           disabled={!!busy || (!!auth.user && !auth.can_edit)}
           onClick={() =>
             auth.can_edit
@@ -557,22 +566,26 @@ function App() {
           NOTEBOOKS <span>{notebooks.length.toString().padStart(2, "0")}</span>
         </div>
         <nav aria-label="Notebooks">
-          {notebooks
-            .filter((n) => n.title.toLowerCase().includes(query.toLowerCase()))
-            .map((n) => (
-              <button
-                key={n.id}
-                className={
-                  "notebook-link " + (n.id === selected ? "active" : "")
-                }
-                disabled={!!busy}
-                onClick={() => choose(n.id)}
-              >
-                <BookOpen size={16} />
-                <span>{n.title}</span>
-                {startingIds.has(n.id) ? <span className="running-editor-dot starting-editor-dot" aria-label="Editor starting" title="Starting Python environment…" /> : chatStates[n.id]?.working ? <span className="agent-working-dots" aria-label="Agent working" title="Agent working"><i /><i /><i /></span> : editors[n.id]?.ready && editors[n.id]?.connected && <span className="running-editor-dot" aria-label="Editor connected" title="Editor running" />}
+          {sortedUsers.map(owner => {
+            const mine = owner.id === auth.user?.user_id;
+            const matches = notebooks.filter(n => n.owner_id === owner.id && n.title.toLowerCase().includes(query.toLowerCase()));
+            if (query && !matches.length && !owner.login.includes(query.toLowerCase())) return null;
+            const expanded = query ? true : expandedUsers[owner.id] ?? mine;
+            return <section className="notebook-owner" key={owner.id}>
+              <button className="owner-toggle" aria-expanded={expanded} onClick={() => setExpandedUsers(items => ({ ...items, [owner.id]: !expanded }))}>
+                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {owner.avatar_url ? <img src={owner.avatar_url} alt="" referrerPolicy="no-referrer" /> : <span className="owner-initial">{owner.login[0].toUpperCase()}</span>}
+                <strong>{owner.login}</strong>{mine && <small>You</small>}<span className="owner-count">{notebooks.filter(n => n.owner_id === owner.id).length}</span>
               </button>
-            ))}
+              {expanded && <div className="owner-notebooks">{matches.map(n => <button
+                key={n.id} className={"notebook-link " + (n.id === selected ? "active" : "")}
+                disabled={!!busy} onClick={() => choose(n.id)}
+              >
+                <BookOpen size={16} /><span>{n.title}</span>
+                {startingIds.has(n.id) ? <span className="running-editor-dot starting-editor-dot" aria-label="Editor starting" title="Starting Python environment…" /> : chatStates[n.id]?.working ? <span className="agent-working-dots" aria-label="Agent working" title="Agent working"><i /><i /><i /></span> : editors[n.id]?.ready && editors[n.id]?.connected && <span className="running-editor-dot" aria-label="Editor connected" title="Editor running" />}
+              </button>)}{!matches.length && <p className="list-empty">{mine ? "Create your first notebook." : "No notebooks yet."}</p>}</div>}
+            </section>;
+          })}
           {!loading && !notebooks.length && (
             <p className="list-empty">A little space for your next big idea.</p>
           )}
@@ -596,7 +609,7 @@ function App() {
               </span>
               <span>
                 <strong>{auth.user.login}</strong>
-                <small>{auth.can_edit ? "Workspace owner" : "Reader"}</small>
+                <small>{"Signed in with GitHub"}</small>
               </span>
               <form action="/api/auth/logout" method="post">
                 <button
@@ -643,7 +656,7 @@ function App() {
                   >
                     <Download size={16} />
                   </a>
-                  {auth.can_edit && (
+                  {ownsNotebook && (
                     <button
                       className="button delete-notebook"
                       aria-label="Delete notebook"
@@ -666,8 +679,16 @@ function App() {
                       }}
                     ><Trash2 size={16} strokeWidth={1.5} /></button>
                   )}
-                  {auth.can_edit && <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(!chatOpen)}><MessageSquare size={16}/>Chat</button>}
-                  {auth.can_edit && !activeEditor && (
+                  <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(!chatOpen)}><MessageSquare size={16}/>Chat</button>
+                  {notebook && !ownsNotebook && <button className="button primary" disabled={!!busy} onClick={() => {
+                    if (!auth.user) { location.assign("/api/auth/login"); return; }
+                    void action("Forking notebook…", async () => {
+                      const fork = await api<Notebook>(`/notebooks/${notebook.id}/fork`, {});
+                      await refresh(); setSelected(fork.id);
+                      setExpandedUsers(items => ({ ...items, [auth.user!.user_id]: true }));
+                    });
+                  }}><GitFork size={16} />Fork</button>}
+                  {ownsNotebook && !activeEditor && (
                     <button className="button primary" disabled={!!busy || setupStarted !== null} onClick={() => { void openEditor(selected!).catch(e => setError(e.message)); }}>
                       <Pencil size={15} /> Edit notebook
                     </button>
@@ -743,7 +764,7 @@ function App() {
             </button>
             {!auth.can_edit && (
               <small>
-                Everyone can read. The workspace owner can create and edit.
+                Everyone can read. Sign in to create your own notebooks.
               </small>
             )}
           </div>
@@ -778,8 +799,8 @@ function App() {
               />}
             </div>
             {notebook && !authLoaded && <ChatLoading open={chatOpen} onClose={() => setChatOpen(false)} />}
-            {auth.can_edit && chatIds.map(id => <Suspense key={id} fallback={<ChatLoading open={selected === id && chatOpen} onClose={() => setChatPanel({ id, open: false })} />}><Chat
-              model={auth.chat_model} notebookId={id} editorStarting={startingIds.has(id)}
+            {authLoaded && chatIds.map(id => <Suspense key={id} fallback={<ChatLoading open={selected === id && chatOpen} onClose={() => setChatPanel({ id, open: false })} />}><Chat
+              model={auth.chat_model} notebookId={id} editorStarting={startingIds.has(id)} readOnly={!auth.user || notebooks.find(n => n.id === id)?.owner_id !== auth.user.user_id}
               editor={editors[id]?.connected ? editors[id] : null}
               getFrame={() => { const current = editorsRef.current[id]; return current ? frames.current.get(current.token) ?? null : null; }}
               disabled={selected === id && !!busy} open={selected === id && chatOpen}
@@ -810,6 +831,7 @@ function App() {
                 const item = await api<Notebook>("/notebooks", { title });
                 await refresh();
                 setSelected(item.id);
+                setExpandedUsers(items => ({ ...items, [item.owner_id]: true }));
                 setCreating(false);
                 setTitle("");
               });

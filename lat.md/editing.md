@@ -6,11 +6,11 @@ A notebook's durable document lives in Postgres. JupyterLab provides temporary e
 
 [[backend/main.py#provision_editor]] reuses a reachable editor or creates a replacement from the durable draft. Transient provider failures preserve the existing session instead of silently replacing it.
 
-[[backend/editor.py#start]] connects notebooks to one shared VM and Jupyter server per app origin. [[backend/runtime_registry.py#runtime_lease]] serializes creation across serverless requests through a database lease. Concurrent opens reuse the same runtime; each editing session gets a unique document path and bridge token, and each notebook has its own Python kernel. All kernels share installed packages and the writable filesystem, so this is suitable for the single authorized owner, not isolation between untrusted users.
+[[backend/editor.py#start]] connects notebooks to one VM and Jupyter server per user within an app origin. [[backend/runtime_registry.py#runtime_lease]] serializes creation across serverless requests through a database lease. Concurrent opens reuse the same runtime; each editing session gets a unique document path and bridge token, and each notebook has its own Python kernel. Only that user’s kernels share installed packages and a writable filesystem. Other users receive different VMs, capability URLs, writable drives, and database runtime leases. The prepared dependency drive remains read-only and shared.
 
-The runtime mounts a shared writable workspace drive at `/vercel` and the dependency drive read-only at `/notebook-base`. A new VM starts with a 15-minute execution limit. Active editor heartbeats renew a roughly 10–15 minute remaining lifetime, without adding time independently for every tab. It does not run forever: platform session limits still apply. After expiry a new VM attaches the durable workspace and starts Jupyter again; kernel memory is lost.
+The runtime mounts its user’s writable workspace drive at `/vercel` and the dependency drive read-only at `/notebook-base`. A new VM starts with a 15-minute execution limit. Active editor heartbeats renew a roughly 10–15 minute remaining lifetime, without adding time independently for every tab. It does not run forever: platform session limits still apply. After expiry a new VM attaches the durable workspace and starts Jupyter again; kernel memory is lost.
 
-Editor Sandboxes use `persistent=False`, so stop does not snapshot them. Postgres remains authoritative for notebook documents. Opening writes a fresh session-specific file under the notebook's directory; stale tabs cannot overwrite a replacement session's file. Legacy per-notebook drives remain retained, but their extra packages and side files are not automatically imported into the new shared workspace.
+Editor Sandboxes use `persistent=False`, so stop does not snapshot them. Postgres remains authoritative for notebook documents. Opening writes a fresh session-specific file under the notebook's directory; stale tabs cannot overwrite a replacement session's file. The original account retains its legacy shared workspace drive. Its old app-wide VM is retired before opening the per-user VM. Legacy per-notebook drives remain retained, but their extra packages and side files are not imported automatically.
 
 Users and the assistant can run `%pip install numpy matplotlib` in a code cell to install packages into the active kernel environment. The assistant prompt recommends this notebook-native syntax.
 
@@ -81,7 +81,7 @@ Jupyter disk autosave is disabled. The bridge still serializes explicit Jupyter 
 
 JupyterLab 4.4.10 can otherwise overlap these operations: a second save reads a new disk hash before the first save updates the context hash, producing a false File Changed dialog. This was reproduced with one page and no external writer in a disposable Sandbox.
 
-The queue preserves errors for the requesting caller and continues after a rejected save. It does not disable Jupyter's conflict checks or automatically overwrite external changes. The bridge is installed during Sandbox startup, so existing editors need to leave editing and reopen to receive it. Use Save & exit to publish; navigation leaves the changes in the private draft.
+The queue preserves errors for the requesting caller and continues after a rejected save. It does not disable Jupyter's conflict checks or automatically overwrite external changes. The bridge is installed during Sandbox startup, so existing editors need to leave editing and reopen to receive it. Navigation and periodic autosaves export the live document and publish changed content automatically.
 
 ## Upstream integration comparison
 

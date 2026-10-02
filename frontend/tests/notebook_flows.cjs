@@ -5,18 +5,23 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 let holdClose=false,holdStart=false,heldStart,closeSource,starts=[],expiredIds=new Set(),saves=[],boots={},histories=new Map(),messagesSeen=[];
 let releaseBackground;
 let holdHistory=true;const historyWaiters=[];
-const notebooks=['one','two','three'].map(id=>({id,title:'Notebook '+id,revision:1,updated_at:1}));
+const notebooks=['one','two','three'].map(id=>({id,title:'Notebook '+id,owner_id:1,revision:1,updated_at:1}));
+notebooks.push({id:'other',title:'Other notebook',owner_id:2,revision:1,updated_at:1});
+histories.set('other',{messages:[{id:'other-chat',role:'assistant',parts:[{type:'text',text:'Public conversation from another user.'}]}],revision:1});
+const workspaceUsers=[{id:3,login:'zara'},{id:1,login:'1st1'},{id:2,login:'amy'}];
 const nb={nbformat:4,nbformat_minor:5,metadata:{},cells:[{id:'cell',cell_type:'markdown',source:'Published content',metadata:{}}]};
 const server=http.createServer(async(req,res)=>{
  const u=new URL(req.url,'http://localhost');let raw='';for await(const c of req)raw+=c;const body=raw?JSON.parse(raw):{};
  res.setHeader('Content-Type','application/json');const id=u.pathname.split('/')[3];
+ if(u.pathname==='/api/users')return res.end(JSON.stringify(workspaceUsers));
  if(u.pathname==='/api/notebooks')return res.end(JSON.stringify(notebooks));
- if(u.pathname==='/api/auth/me')return res.end(JSON.stringify({can_edit:true,user:{login:'1st1'},configured:true}));
+ if(u.pathname==='/api/auth/me')return res.end(JSON.stringify({can_edit:true,user:{login:'1st1',user_id:1},configured:true}));
  if(u.pathname.endsWith('/chat-history')){const v=histories.get(id)||{messages:[],revision:0};if(req.method==='PUT'){histories.set(id,{messages:body.messages,revision:body.revision+1});return res.end(JSON.stringify({revision:body.revision+1}));}if(holdHistory){historyWaiters.push(()=>res.end(JSON.stringify(v)));return;}return res.end(JSON.stringify(v));}
  if(u.pathname.endsWith('/editor')){starts.push(id);const send=()=>res.end('data: '+JSON.stringify({type:'ready',editor:{name:'test',token:id+'-'+starts.length,url:'http://127.0.0.1:5187/editor-frame?id='+id}})+'\n\n');if(holdStart){res.write('data: '+JSON.stringify({type:'progress',message:'Preparing test environment…'})+'\n\n');res.write('data: '+JSON.stringify({type:'log',message:'Retained setup log'})+'\n\n');heldStart=send;return;}return send();}
  if(u.pathname.endsWith('/editor-status')){res.statusCode=expiredIds.has(id)?410:200;return res.end('{}');}
  if(u.pathname.endsWith('/save')){saves.push({id,...body});return res.end('{}');}
  if(u.pathname.endsWith('/close')){closeSource=body.source;if(holdClose)return;return res.end('{}');}
+ if(u.pathname.endsWith('/fork')){const original=notebooks.find(n=>n.id===id);const fork={...original,id:'forked',owner_id:1};notebooks.push(fork);return res.end(JSON.stringify(fork));}
  if(u.pathname.endsWith('/download'))return res.end(JSON.stringify(nb));
  if(u.pathname.endsWith('/render')){res.setHeader('Content-Type','text/html');return res.end('Published '+id);}
  if(u.pathname.endsWith('/chat')){
@@ -97,6 +102,18 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  await page.clock.fastForward(15001);for(let i=0;i<30&&await bButton.getByLabel('Editor connected').count();i++)await tick();assert.equal(await bButton.getByLabel('Editor connected').count(),0,'kernel disconnection clears background dot');assert.equal(starts.length,2);
  expiredIds.add('two');await page.clock.fastForward(15001);await tick();await bButton.click();await page.getByTitle('Rendered notebook').waitFor();await page.clock.fastForward(15001);await tick();assert.equal(starts.length,2,'disconnected background editor stays read-only until explicitly opened');
  await aButton.click();expiredIds.add('one');await page.clock.fastForward(15001);for(let i=0;i<40&&starts.length<3;i++)await tick();assert.equal(starts.at(-1),'one');assert(starts.length>=3,'selected expired editor auto recovers');
+ const groupNames=await page.locator('.owner-toggle strong').allTextContents();assert.deepEqual(groupNames,['1st1','amy','zara']);
+ assert.equal(await page.locator('.owner-toggle').filter({hasText:'amy'}).getAttribute('aria-expanded'),'false');
+ await page.locator('.owner-toggle').filter({hasText:'amy'}).click();await page.getByRole('button',{name:'Other notebook',exact:true}).click();
+ await page.getByText('Public conversation from another user.',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('textbox',{name:'Message'}).count(),0);
+ assert.equal(await page.getByRole('button',{name:'Edit notebook',exact:true}).count(),0);
+ assert.equal(await page.getByRole('button',{name:'Delete notebook',exact:true}).count(),0);
+ assert.equal(await page.getByRole('button',{name:'New chat',exact:true}).count(),0);
+ await page.getByRole('button',{name:'Fork',exact:true}).click();await page.getByRole('button',{name:'Edit notebook',exact:true}).waitFor();
+ await page.getByRole('textbox',{name:'Message'}).waitFor();
+ assert.equal(await page.getByText('Public conversation from another user.',{exact:true}).isVisible(),false,'fork does not copy chat');
+ assert.equal(notebooks.find(n=>n.id==='forked').owner_id,1);
  if(process.env.SCREENSHOT_PATH)await page.screenshot({path:process.env.SCREENSHOT_PATH});
  console.log('PASS: automatic saved-chat opening and manual dismissal, nonblocking history loads, view chat and consent, read-only navigation, retained iframe state across notebooks and welcome, multiple live dots, disconnected dot removal, active recovery');
 

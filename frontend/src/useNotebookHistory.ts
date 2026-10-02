@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { UIMessage } from "ai";
 
-export function useNotebookHistory(notebookId: string, token: string | null, messages: UIMessage[], setMessages: (messages: UIMessage[]) => void, busy: boolean) {
+export function useNotebookHistory(notebookId: string, token: string | null, messages: UIMessage[], setMessages: (messages: UIMessage[]) => void, busy: boolean, readOnly = false) {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -45,7 +45,7 @@ export function useNotebookHistory(notebookId: string, token: string | null, mes
   }, [endpoint, token, reload, setMessages]);
 
   useEffect(() => {
-    if (!loaded || busy || !dirty || error || inFlight.current) return;
+    if (readOnly || !loaded || busy || !dirty || error || inFlight.current) return;
     inFlight.current = true;
     setSaving(true);
     const snapshot = serialized;
@@ -66,13 +66,13 @@ export function useNotebookHistory(notebookId: string, token: string | null, mes
       inFlight.current = false;
       if (active.current) setSaving(false);
     });
-  }, [loaded, busy, dirty, error, serialized, endpoint, token, saving]);
+  }, [readOnly, loaded, busy, dirty, error, serialized, endpoint, token, saving]);
 
   return {
     loaded, loading, saving, error,
     blocking: loading || saving || (dirty && !error),
     // Pending writes protect publication and tab close, but do not block navigation.
-    persistenceBlocking: saving || (dirty && !error),
+    persistenceBlocking: !readOnly && (saving || (dirty && !error)),
     reloadRequired,
     clearError: () => setError(""),
     retry: () => {

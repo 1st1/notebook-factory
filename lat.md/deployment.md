@@ -14,7 +14,7 @@ The configured production application is [notebook-factory-green.vercel.app](htt
 | Project ID | `prj_6Q4NWdJ0w3VHaXshi9MoWKwhdPhP` |
 | Team ID | `team_7scPglQEOz4JjqD4f08fLr7z` |
 | Database | Connected Neon Marketplace integration |
-| Application owner | GitHub login `1st1` |
+| User enrollment | Any GitHub account, up to 300 admitted users; legacy notebooks belong to `1st1` |
 
 These are the project details verified during setup on October 1, 2026. Local linkage lives in the ignored `.vercel/project.json`. Production has been deployed directly from the working tree with the CLI; a successful deployment does not imply those changes have been committed or pushed.
 
@@ -137,3 +137,10 @@ The deploy helper runs `uv run --project backend python scripts/prepare_sandbox.
 [[scripts/prepare_sandbox.py#prepare]] validates the committed dependency drive or builds and verifies a replacement before deployment. Commit [backend/assets/sandbox-environment.json](../backend/assets/sandbox-environment.json) after rebuilding. Git-based deployments use this manifest directly. Keep previous dependency drives while deployments referencing them are retained. A missing pinned drive fails preparation explicitly; remove its stale manifest and rerun preparation to rebuild. Retired drives and legacy Sandbox snapshots can be removed through Vercel separately.
 
 Update [direct dependencies](../backend/assets/sandbox-requirements.in), then regenerate [the lock](../backend/assets/sandbox-requirements.lock) with `uv pip compile backend/assets/sandbox-requirements.in --python-version 3.13 --python-platform x86_64-manylinux_2_28 --output-file backend/assets/sandbox-requirements.lock` before preparation. No local Docker engine is required.
+
+
+## Multi-user migration
+
+Startup creates the bounded users table and adds notebook ownership under the existing migration lock. Legacy notebooks remain assigned to the original account; no manual SQL migration is required.
+
+Signup enrollment is capped at 300 including the reserved original account. The database primary-key range separately caps users at 500. Runtime names and writable drives are user-scoped; the original account keeps its existing workspace drive. Saved chats become publicly readable while chat writes and all editor operations require notebook ownership. Deploy the frontend and backend together.
