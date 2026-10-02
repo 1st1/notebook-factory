@@ -585,7 +585,7 @@ function App() {
         >
           <Plus size={17} /> New notebook
         </button>
-        <div className="search">
+        <label className="search">
           <Search size={15} />
           <input
             aria-label="Search notebooks"
@@ -593,10 +593,7 @@ function App() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-        </div>
-        <div className="list-label">
-          NOTEBOOKS
-        </div>
+        </label>
         <nav aria-label="Notebooks">
           {sortedUsers.map(owner => {
             const mine = owner.id === auth.user?.user_id;

@@ -179,7 +179,7 @@ It also checks bundled rendering templates, workspace-relative launcher paths, p
 
 Notebook and chat panels share compact, aligned headers; chat actions are grouped at the right. Errors appear below the workspace with matching horizontal margins. Title spacing is compact.
 
-The sidebar uses a green creation button and white search field without shortcut hints. Escape dismisses the new-notebook dialog.
+The sidebar uses a green creation button and white search field without shortcut hints. Clicking anywhere in the search field focuses its input. User avatars and notebook icons share a horizontal centerline, with compact user dropdown spacing. Escape dismisses the new-notebook dialog.
 
 A subtle GitHub icon beside the sidebar logo opens the project repository in a new tab. The breadcrumb toolbar is omitted. A standalone mobile navigation button opens the sidebar on narrow screens.
 

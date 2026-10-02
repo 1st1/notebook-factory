@@ -140,6 +140,7 @@ svg {
   box-shadow: 0 2px 2px #22222203;
 }
 .search {
+  cursor: text;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -161,20 +162,6 @@ svg {
 }
 .search input::placeholder {
   color: #96998e;
-}
-.list-label {
-  display: flex;
-  justify-content: space-between;
-  letter-spacing: 1.5px;
-  color: #868d7e;
-  font-size: 9px;
-  font-weight: 650;
-  padding: 9px 10px 14px;
-}
-.list-label span {
-  font-size: 10px;
-  letter-spacing: 0;
-  color: #9ba18f;
 }
 nav {
   min-height: 0;
@@ -820,11 +807,13 @@ main > .error > button { flex-shrink: 0; }
 @keyframes editor-start-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .starting-editor-dot { animation: none; } }
 
-.owner-toggle { display: flex; align-items: center; gap: 7px; width: 100%; padding: 10px 8px; border: 0; background: transparent; color: #66705e; text-align: left; cursor: pointer; }
+.owner-toggle { display: flex; align-items: center; gap: 4px; width: 100%; padding: 10px 0; border: 0; background: transparent; color: #66705e; text-align: left; cursor: pointer; }
 .owner-toggle img, .owner-initial { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; }
 .owner-initial { display: grid; place-items: center; background: #e4e9dc; }
 .owner-toggle strong { overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
 .owner-toggle small, .owner-count { font-size: 10px; color: #8b9483; }
 .owner-count { margin-left: auto; }
 .owner-notebooks { padding-left: 10px; }
+.owner-notebooks .notebook-link { padding-left: 12px; }
+.owner-toggle > svg, .notebook-link > svg { flex-shrink: 0; }
 .chat-readonly { border-top: 1px solid #dde1d5; padding: 14px 16px; font-size: 12px; color: #7b8573; }
