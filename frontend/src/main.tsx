@@ -346,20 +346,32 @@ function App() {
         />
       )}
       <aside className={mobile ? "sidebar open" : "sidebar"}>
-        <a
-          className="brand"
-          href="/"
-          onClick={(e) => {
-            if (editor) e.preventDefault();
-          }}
-        >
-          <span className="brand-icon">
-            <BookOpen size={19} />
-          </span>
-          <span>
-            notebook<span className="brand-light">factory</span>
-          </span>
-        </a>
+        <div className="brand-row">
+          <a
+            className="brand"
+            href="/"
+            onClick={(e) => {
+              if (editor) e.preventDefault();
+            }}
+          >
+            <span className="brand-icon">
+              <BookOpen size={19} />
+            </span>
+            <span>
+              notebook<span className="brand-light">factory</span>
+            </span>
+          </a>
+          <a
+            className="repository-link"
+            href="https://github.com/1st1/notebook-factory"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="View Notebook Factory on GitHub"
+            title="View on GitHub"
+          >
+            <Github size={15} aria-hidden="true" />
+          </a>
+        </div>
         <button
           className="new-button"
           title={

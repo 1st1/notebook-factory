@@ -77,6 +77,27 @@ svg {
   position: fixed;
   inset: 0 auto 0 0;
 }
+.brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.repository-link {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 30px;
+  flex-shrink: 0;
+  color: #9ba194;
+  border-radius: 5px;
+  transition: color 150ms, background-color 150ms;
+}
+.repository-link:hover,
+.repository-link:focus-visible {
+  color: #53604e;
+  background: #e9ece3;
+}
 .brand {
   display: flex;
   align-items: center;
