@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 import secrets
+import time
 from pathlib import Path
+from urllib.parse import quote
 
 import anyio
 import httpx
@@ -13,6 +15,7 @@ from vercel import sandbox
 from vercel.api import session
 
 from config import APP_URL, MAX_BYTES
+from runtime_registry import load_runtime, runtime_lease, store_runtime
 from sandbox_environment import prepared
 
 ASSETS = Path(__file__).with_name("assets")
@@ -40,14 +43,14 @@ def workspace_drive_name(notebook_id: str):
     return "nf-workspace-" + hashlib.sha256(notebook_id.encode()).hexdigest()[:32]
 
 
-async def start(source: str, report=lambda kind, message: None, *, notebook_id: str):
+async def _start_runtime(report=lambda kind, message: None):
     token = secrets.token_urlsafe(32)
-    name = "nf-" + secrets.token_hex(12)
+    name = shared_runtime_name()
     async with session():
         environment = prepared()
         report("progress", "Attaching your notebook workspace…")
         drive = await sandbox.get_or_create_drive(
-            name=workspace_drive_name(notebook_id), region=environment["region"],
+            name=workspace_drive_name("shared:" + APP_URL), region=environment["region"],
             max_size_bytes=4 * 1024**3,
         )
         for attempt in range(30):
@@ -64,7 +67,7 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
                 report("progress", "Waiting for the previous editor to release its workspace…")
                 await anyio.sleep(1)
         try:
-            files = {"notebook.ipynb": source}
+            files = {}
             report("progress", "Configuring the notebook editor…")
             for filename, target in {
                 "initialize_workspace.py": ".initialize-workspace.py",
@@ -145,19 +148,18 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
                             }
                         }
                     ),
-                    "notebook.ipynb",
                 ],
             )
             route = next(route.url.rstrip("/") for route in instance.routes if route.port == PORT)
-            url = f"{route}/{token}/doc/tree/notebook.ipynb"
+            url = f"{route}/{token}"
             report("progress", "Waiting for JupyterLab to respond…")
             async with httpx.AsyncClient(timeout=3, follow_redirects=True) as client:
                 deadline = anyio.current_time() + 45
                 while anyio.current_time() < deadline:
                     try:
-                        response = await client.get(url)
-                        if response.status_code == 200 and "jupyter-config-data" in response.text:
-                            return {"name": name, "url": url, "token": token}
+                        response = await client.get(url + "/api/status")
+                        if response.status_code == 200:
+                            return {"name": name, "base_url": url, "generation": generation()}
                     except httpx.HTTPError:
                         pass
                     await anyio.sleep(0.5)
@@ -172,6 +174,74 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
             raise
 
 
+def shared_runtime_name():
+    return "nf-shared-" + hashlib.sha256(APP_URL.encode()).hexdigest()[:24]
+
+
+async def _alive(current):
+    try:
+        instance = await sandbox.get_sandbox(name=current["name"])
+    except sandbox.SandboxApiError as error:
+        if error.status_code == 404:
+            return False
+        raise
+    if not instance.current_session or instance.current_session.status != sandbox.SandboxStatus.RUNNING:
+        return False
+    async with httpx.AsyncClient(timeout=5) as client:
+        try:
+            response = await client.get(current["base_url"] + "/api/status")
+        except httpx.HTTPError as error:
+            raise HTTPException(502, "Could not reach the shared runtime. Retry without closing other tabs.") from error
+    if response.status_code >= 500:
+        raise HTTPException(502, "The shared runtime is temporarily unavailable; retry shortly.")
+    return response.status_code == 200
+
+
+async def _extend(instance):
+    current = instance.current_session
+    if current is None or current.status != sandbox.SandboxStatus.RUNNING:
+        return
+    started = current.started_at
+    duration = current.execution_time_limit
+    if started and duration:
+        started_seconds = started / 1000 if started > 100_000_000_000 else started
+        remaining = started_seconds + duration.total_seconds() - time.time()
+        if remaining < 600:
+            await current.extend_execution_time_limit(max(30, int(900 - remaining)))
+
+
+async def start(source: str, report=lambda kind, message: None, *, notebook_id: str):
+    key = shared_runtime_name()
+    async with runtime_lease(key) as claim, session():
+        report("progress", "Connecting to the shared Python runtime…")
+        current = await load_runtime(key)
+        pending = (current or {}).get("pending_deletions", [])
+        if current and current.get("generation") == generation() and await _alive(current):
+            instance = await sandbox.get_sandbox(name=current["name"])
+            await _extend(instance)
+        else:
+            # The stable name also recovers a runtime created before an interrupted DB write.
+            await _destroy_runtime({"name": key})
+            current = await _start_runtime(report)
+            current["pending_deletions"] = pending
+            await store_runtime(key, claim, current)
+            instance = await sandbox.get_sandbox(name=current["name"])
+        for folder_to_delete in pending:
+            await instance.fs.remove(folder_to_delete, recursive=True, missing_ok=True)
+        if pending:
+            current["pending_deletions"] = []
+            await store_runtime(key, claim, current)
+        token = secrets.token_urlsafe(32)
+        folder = "notebooks/" + hashlib.sha256(notebook_id.encode()).hexdigest()
+        path = folder + "/notebook-" + token + ".ipynb"
+        await instance.fs.write_text(path, source)
+        return {
+            "name": current["name"], "shared": True, "base_url": current["base_url"],
+            "path": path, "token": token,
+            "url": current["base_url"] + "/doc/tree/" + quote(path, safe="/") + "?nf_editor_token=" + token,
+        }
+
+
 async def read(editor: dict, *, extend=True):
     async with session():
         try:
@@ -184,9 +254,9 @@ async def read(editor: dict, *, extend=True):
         if current is None or current.status != sandbox.SandboxStatus.RUNNING:
             raise HTTPException(410, "Editor expired. Reopen it to restore the last saved draft.")
         # A bounded HTTP read avoids loading an unbounded notebook into the function.
-        base = editor["url"].split("/doc/tree/", 1)[0]
+        base = editor.get("base_url") or editor["url"].split("/doc/tree/", 1)[0]
         async with httpx.AsyncClient(timeout=20) as client:
-            async with client.stream("GET", base + "/files/notebook.ipynb") as response:
+            async with client.stream("GET", base + "/files/" + quote(editor.get("path", "notebook.ipynb"), safe="/")) as response:
                 if response.status_code != 200:
                     raise HTTPException(410, "Editor unavailable. Reopen the saved draft.")
                 body = bytearray()
@@ -195,11 +265,11 @@ async def read(editor: dict, *, extend=True):
                     if len(body) > MAX_BYTES:
                         raise HTTPException(413, "Notebook exceeds 10 MB")
         if extend:
-            await current.extend_execution_time_limit(30)
+            await keep_alive(editor)
         return body.decode()
 
 
-async def stop(editor: dict):
+async def _destroy_runtime(editor: dict):
     async with session():
         try:
             instance = await sandbox.get_sandbox(name=editor["name"])
@@ -211,7 +281,41 @@ async def stop(editor: dict):
         await instance.destroy()
 
 
+async def stop(editor: dict):
+    if not editor.get("shared"):
+        await _destroy_runtime(editor)
+        return
+    # Only retire this editing session; other notebooks keep their kernels and server.
+    async with httpx.AsyncClient(timeout=10) as client:
+        response = await client.get(editor["base_url"] + "/api/sessions")
+        if response.status_code in (404, 410):
+            return
+        response.raise_for_status()
+        for item in response.json():
+            if item.get("path") == editor["path"]:
+                deleted = await client.delete(editor["base_url"] + "/api/sessions/" + item["id"])
+                if deleted.status_code not in (204, 404, 410):
+                    deleted.raise_for_status()
+        deleted = await client.delete(editor["base_url"] + "/api/contents/" + quote(editor["path"], safe="/"))
+        if deleted.status_code not in (204, 404, 410):
+            deleted.raise_for_status()
+
+
 async def delete_workspace(notebook_id: str):
+    # Record deletion first, so an expired VM cannot leave abandoned notebook files.
+    key = shared_runtime_name()
+    folder = "notebooks/" + hashlib.sha256(notebook_id.encode()).hexdigest()
+    async with runtime_lease(key) as claim, session():
+        current = await load_runtime(key) or {}
+        pending = list(dict.fromkeys([*current.get("pending_deletions", []), folder]))
+        current["pending_deletions"] = pending
+        await store_runtime(key, claim, current)
+        if current.get("base_url") and await _alive(current):
+            instance = await sandbox.get_sandbox(name=current["name"])
+            await instance.fs.remove(folder, recursive=True, missing_ok=True)
+            current["pending_deletions"].remove(folder)
+            await store_runtime(key, claim, current)
+    # Clean up a drive from the previous one-VM-per-notebook implementation, if present.
     async with session():
         for attempt in range(30):
             try:
@@ -226,8 +330,6 @@ async def delete_workspace(notebook_id: str):
 
 
 async def keep_alive(editor: dict):
-    async with session():
+    async with runtime_lease(shared_runtime_name()), session():
         instance = await sandbox.get_sandbox(name=editor["name"])
-        current = instance.current_session
-        if current is not None and current.status == sandbox.SandboxStatus.RUNNING:
-            await current.extend_execution_time_limit(30)
+        await _extend(instance)

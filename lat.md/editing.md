@@ -6,7 +6,11 @@ A notebook's durable document lives in Postgres. JupyterLab provides temporary e
 
 [[backend/main.py#provision_editor]] reuses a reachable editor or creates a replacement from the durable draft. Transient provider failures preserve the existing session instead of silently replacing it.
 
-[[backend/editor.py#start]] creates a randomly named Sandbox with port 8888 and an initial 15-minute execution limit. It mounts a private workspace drive at `/vercel` and the shared dependency drive read-only at `/notebook-base`, then writes the current `notebook.ipynb`, fresh editor assets, settings, and capability token. Document, bridge, and settings files upload in one filesystem batch. Editor Sandboxes use `persistent=False`, so stop does not snapshot them. Postgres remains authoritative for notebook documents; the private drive retains packages and side files.
+[[backend/editor.py#start]] connects notebooks to one shared VM and Jupyter server per app origin. [[backend/runtime_registry.py#runtime_lease]] serializes creation across serverless requests through a database lease. Concurrent opens reuse the same runtime; each editing session gets a unique document path and bridge token, and each notebook has its own Python kernel. All kernels share installed packages and the writable filesystem, so this is suitable for the single authorized owner, not isolation between untrusted users.
+
+The runtime mounts a shared writable workspace drive at `/vercel` and the dependency drive read-only at `/notebook-base`. A new VM starts with a 15-minute execution limit. Active editor heartbeats renew a roughly 10–15 minute remaining lifetime, without adding time independently for every tab. It does not run forever: platform session limits still apply. After expiry a new VM attaches the durable workspace and starts Jupyter again; kernel memory is lost.
+
+Editor Sandboxes use `persistent=False`, so stop does not snapshot them. Postgres remains authoritative for notebook documents. Opening writes a fresh session-specific file under the notebook's directory; stale tabs cannot overwrite a replacement session's file. Legacy per-notebook drives remain retained, but their extra packages and side files are not automatically imported into the new shared workspace.
 
 Users and the assistant can run `%pip install numpy matplotlib` in a code cell to install packages into the active kernel environment. The assistant prompt recommends this notebook-native syntax.
 
@@ -49,7 +53,7 @@ The stream owns the provisioning task and cancels it on disconnect. Provisioning
 
 A bridge response must arrive within 20 seconds. Every 30 seconds, the frontend saves a durable draft, skipping an autosave if another save/close is active. The backend validates the exported notebook and commits it to Postgres. Legacy callers without an exported document retain the server file-read path.
 
-[[backend/editor.py#read]] bounds the HTTP read by the notebook size limit, checks session availability, and normally extends Sandbox execution time by 30 seconds. [[backend/main.py#save_draft]] stores the document and outputs; it never executes cells.
+[[backend/editor.py#read]] bounds the HTTP read by the notebook size limit, checks session availability, and refreshes the shared runtime idle horizon. [[backend/main.py#save_draft]] stores the document and outputs; it never executes cells.
 
 Save & exit renders the saved document once and uploads the rendered HTML to Blob and atomically stores its source, fallback HTML, and Blob URL as the public version, increments the revision, updates publication time, and refreshes the rendered iframe. It closes the editor after publication. It does not run cells, deploy the application, or retain previous revisions.
 
@@ -57,15 +61,15 @@ Save & exit renders the saved document once and uploads the rendered HTML to Blo
 
 Exit discards the private draft, including autosaved changes, and restores the last published document through [[backend/main.py#discard]]. It skips Jupyter saving, detaches the session, and schedules shutdown. Save & exit publishes through the close endpoint.
 
-[[backend/main.py#close]] saves the draft and clears the current editor record before returning success. [[backend/main.py#stop_closed_editor]] stops the detached Sandbox as a response background task.
+[[backend/main.py#close]] saves the draft and clears the current editor record before returning success. [[backend/main.py#stop_closed_editor]] retires only the detached Jupyter session and its document as a response background task. The VM and other kernels stay running.
 
 App autosaves and Save & exit export the full in-memory Jupyter model, including outputs, without invoking its server save or waiting on dialogs. The authenticated save endpoint validates the document and active session before persisting it. The iframe remains mounted until persistence succeeds. Sandbox keepalive is best effort after draft persistence and is skipped on close.
 
-Reconnect first persists the browser document and detaches the old session, then starts a fresh runtime from the durable draft. A dead Sandbox does not prevent recovery while the loaded browser model and current session token remain available. Already-open editors running an older bridge cannot export this way; do not reload them expecting to recover unsaved changes.
+Reconnect first persists the browser document and detaches the old session, then opens a fresh document session from the durable draft, reusing the shared runtime when healthy. A dead Sandbox does not prevent recovery while the loaded browser model and current session token remain available. Already-open editors running an older bridge cannot export this way; do not reload them expecting to recover unsaved changes.
 
-Background shutdown errors are logged; the Sandbox execution limit bounds its remaining lifetime. This background task is not a durable job queue. Reopening after close provisions a fresh environment from the stored draft.
+Background shutdown errors are logged; the Sandbox execution limit bounds its remaining lifetime. This background task is not a durable job queue. Reopening before expiry reuses the running Jupyter server and starts a new kernel for the stored document.
 
-Notebook documents and their saved outputs persist in Postgres. Uploaded side files and extra installed dependencies persist on the private drive; kernel memory does not. Exit discards notebook edits, not installed packages or side files. Closing the browser stops app autosaves/heartbeats, so changes since the last successful durable save can be lost. A before-unload warning is advisory, not persistence.
+Notebook documents and their saved outputs persist in Postgres. Uploaded side files and extra installed dependencies persist on the shared workspace drive; kernel memory does not. Exit discards notebook edits, not installed packages or side files. Closing the browser stops app autosaves/heartbeats, so changes since the last successful durable save can be lost. A before-unload warning is advisory, not persistence.
 
 ## Save serialization
 
@@ -93,7 +97,7 @@ Editor environments belong to the deployment that created them. Opening or recon
 
 [[backend/editor.py#generation]] uses Vercel's deployment ID (deployment URL fallback); local development hashes bundled editor assets, provisioning code, and Python dependency declarations. Legacy sessions without a generation are stale. This policy governs live editor reuse. The shared dependency drive contains no notebook, bridge, app origin, or editor token, so it can be reused while each deployment injects fresh app assets.
 
-[[backend/main.py#provision_editor]] recovers the old Sandbox's latest saved notebook into the database before provisioning its replacement. Recovery failures leave the old environment intact. After a successful database backup, it stops the old session before creating the replacement because a drive allows only one writer. If replacement startup fails, the durable draft and drive remain available for retry. Once replaced, old session tokens cannot save or publish. Unopened stale environments expire normally; already-open browsers are not forcibly interrupted at deployment time.
+[[backend/main.py#provision_editor]] recovers the old Sandbox's latest saved notebook into the database before provisioning its replacement. Recovery failures leave the old environment intact. After a successful database backup, it stops the old session before creating the replacement because a drive allows only one writer. If replacement startup fails, the durable draft and drive remain available for retry. Once replaced, old session tokens cannot save or publish. Unopened stale environments expire normally; the next open on a new deployment replaces the shared runtime, interrupting kernels still using the previous generation. Their browser documents remain exportable for recovery.
 
 A regression changes deployment generations, verifies same-deployment reuse, failed-replacement recovery, unpublished draft preservation, successful replacement, and stale-token rejection. App reconnect preserves browser-only edits through direct export before replacing the environment; automatic deployment replacement without an attached browser can only preserve an already-saved draft.
 
@@ -117,9 +121,9 @@ Live Sandbox checks render normal and bold emoji/Japanese labels, rejecting both
 
 The builder installs Python, locked dependencies, and fonts once in a clean Sandbox, then copies the runtime directories to the dependency drive, excluding uv's installation cache. It stops gracefully to flush the drive before a separate read-only mount verifies a seeded environment. The manifest is written only after verification. Previous dependency drives remain available for deployments that reference them.
 
-[[backend/assets/initialize_workspace.py]] seeds a notebook's private drive on first use or when the dependency fingerprint changes. Subsequent opens skip the copy and preserve additional pip packages. A dependency change replaces managed environment directories but preserves other user files. Every open overwrites notebook.ipynb from Postgres and injects current editor assets and a fresh capability.
+[[backend/assets/initialize_workspace.py]] seeds the shared workspace drive on first use or when the dependency fingerprint changes. Subsequent opens skip the copy and preserve additional pip packages. A dependency change replaces managed environment directories but preserves other user files. Every open writes a unique document from Postgres. Runtime creation injects current editor assets and a fresh server capability.
 
-[[backend/editor.py#workspace_drive_name]] deterministically identifies each notebook's drive. Normal shutdown gracefully stops the non-persistent Sandbox, flushing and detaching the drive, then destroys the Sandbox metadata. Brief drive attachment conflicts retry while the previous editor closes. Deleting a notebook also schedules drive deletion through [[backend/editor.py#delete_workspace]]. Cleanup uses background tasks, not a durable queue.
+[[backend/editor.py#workspace_drive_name]] identifies the shared drive from the app origin. Runtime replacement gracefully stops the old non-persistent VM to flush and detach its drive before destroying its metadata. Closing a notebook only shuts down its matching Jupyter kernel and deletes its temporary document. [[backend/editor.py#delete_workspace]] removes that notebook's directory without removing the shared drive; deletion while offline is recorded in the runtime registry and applied on next startup. Legacy per-notebook drives are deleted only when their notebook is deleted.
 
 ## Prepared environment tests
 
@@ -142,3 +146,13 @@ An owner can save and publish a browser document after Sandbox failure. Invalid 
 The template patcher locates the top-level JupyterLab package without executing its initializer, avoiding a heavyweight import during editor setup.
 
 [[backend/assets/patch_jupyter_template.py]] uses importlib spec discovery to find the static HTML template. The regression supplies a package whose initializer raises and verifies CSS and bridge injection succeed without importing it.
+
+## Shared runtime tests
+
+Concurrent notebook opens create one VM with distinct document paths and tokens. Tests verify closing one kernel leaves others alone, heartbeats do not multiply the idle timeout, and offline deletions survive until startup.
+
+A disposable live Sandbox check opens two browser tabs, verifies separate kernel variables, closes one kernel while executing in the other, measures warm reopen, and restores a file after replacing the VM.
+
+## Shared document bridge tests
+
+The bridge locates a nested session-specific notebook path and authenticates the per-editor token, rejecting the server capability as a bridge token.

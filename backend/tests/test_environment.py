@@ -41,12 +41,11 @@ async def test_editor_restores_dependencies_and_injects_current_document(monkeyp
 
     monkeypatch.setattr(editor, "session", session)
     monkeypatch.setattr(editor.httpx, "AsyncClient", http_client)
-    result = await editor.start("private notebook source", notebook_id="test-notebook")
+    result = await editor._start_runtime()
     assert "source" not in create.call_args.kwargs
     assert create.call_args.kwargs["mounts"]["/vercel"] is drive
     assert create.call_args.kwargs["mounts"]["/notebook-base"].mode == "snapshot"
     assert create.call_args.kwargs["persistent"] is False
-    batch.write_text.assert_any_call("notebook.ipynb", "private notebook source")
     assert any(
         c.args[0] == ".vercel-notebook-jupyter-bridge.js" for c in batch.write_text.call_args_list
     )
@@ -58,7 +57,7 @@ async def test_editor_restores_dependencies_and_injects_current_document(monkeyp
         [".patch-jupyter-template.py"],
     )
     assert instance.run_process.await_count == 2  # No dependency or font installation.
-    assert result["token"] in result["url"]
+    assert result["base_url"].startswith("https://sandbox.test/")
 
 
 def test_dependency_changes_invalidate_prepared_manifest(tmp_path, monkeypatch):

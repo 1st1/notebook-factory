@@ -4,12 +4,12 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function bridge(context, content) {
+function bridge(context, content, url = "https://sandbox.test/token/doc/tree/notebook.ipynb") {
   const handlers = {};
   const parent = {};
   const shell = { currentWidget: { context, content }, currentChanged: { connect() {} } };
   const window = {
-    location: { href: 'https://sandbox.test/token/doc/tree/notebook.ipynb', pathname: '/token/doc/tree/notebook.ipynb' },
+    location: new URL(url),
     jupyterapp: { shell, restored: new Promise(() => {}) },
     parent,
     addEventListener: (name, callback) => { const previous = handlers[name]; handlers[name] = previous ? async event => { await previous(event); await callback(event); } : callback; },
@@ -176,4 +176,22 @@ test('exports full live notebook without server access, even while a save is stu
   assert.equal(response, undefined);
   await handlers.message(event);
   assert.deepEqual(JSON.parse(response.source), notebook);
+});
+
+// @lat: [[editing#Shared document bridge tests]]
+test('shared-server bridge uses the exact document path and per-editor token', async () => {
+  const context = { path: 'notebooks/abc/notebook-unique.ipynb', ready: Promise.resolve(), save: async () => {} };
+  const { handlers, parent } = bridge(context, {},
+    'https://sandbox.test/server-cap/doc/tree/notebooks/abc/notebook-unique.ipynb?nf_editor_token=editor-cap');
+  let response;
+  parent.postMessage = value => { response = value; };
+  await handlers.message({ source: parent, origin: 'https://app.test', data: {
+    type: 'vercel-notebook-save', token: 'server-cap', id: 'bad',
+  } });
+  assert.equal(response, undefined);
+  await handlers.message({ source: parent, origin: 'https://app.test', data: {
+    type: 'vercel-notebook-save', token: 'editor-cap', id: 'good',
+  } });
+  assert.equal(response.id, 'good');
+  assert.equal(response.error, undefined);
 });

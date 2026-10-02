@@ -35,6 +35,15 @@ notebooks = Table(
 )
 
 
+runtimes = Table(
+    "shared_runtimes", metadata,
+    Column("id", String, primary_key=True),
+    Column("state", Text),
+    Column("claim", String),
+    Column("claim_until", Integer, nullable=False, default=0),
+)
+
+
 async def initialize():
     async with engine.begin() as conn:
         if conn.dialect.name == "postgresql":

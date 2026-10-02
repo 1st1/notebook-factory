@@ -5,7 +5,8 @@
           window.history.replaceState({}, "", parsedUrl.href);
         }
 
-        var bridgeToken = window.location.pathname.split("/").filter(Boolean)[0];
+        var bridgeToken = parsedUrl.searchParams.get("nf_editor_token") || window.location.pathname.split("/").filter(Boolean)[0];
+        var notebookPath = decodeURIComponent(window.location.pathname.split("/doc/tree/")[1] || "notebook.ipynb");
         var jupyterApp;
         var focusedShell;
         var applyingFocusedLayout = false;
@@ -32,7 +33,7 @@
           if (!app || !app.shell) return null;
           var current = app.shell.currentWidget;
           function matches(widget) {
-            return widget && !widget.isDisposed && widget.context && widget.context.path === "notebook.ipynb";
+            return widget && !widget.isDisposed && widget.context && widget.context.path === notebookPath;
           }
           if (matches(current)) return current;
           if (typeof app.shell.widgets === "function") {
@@ -180,8 +181,8 @@
             throw new Error("Unsupported notebook tool. Reconnect the editor to update it.");
           var app = window.jupyterapp;
           var widget = notebookWidget(app);
-          if (!widget || !widget.content || !widget.context || widget.context.path !== "notebook.ipynb")
-            throw new Error("Select notebook.ipynb and wait for Jupyter to load.");
+          if (!widget || !widget.content || !widget.context || widget.context.path !== notebookPath)
+            throw new Error("Open the current notebook and wait for Jupyter to load.");
           await widget.context.ready;
           var model = widget.content.model.sharedModel;
           var args = data.args || {};
@@ -287,7 +288,7 @@
           try {
             var app = window.jupyterapp;
             var widget = notebookWidget(app);
-            if (!widget || !widget.context || widget.context.path !== "notebook.ipynb") {
+            if (!widget || !widget.context || widget.context.path !== notebookPath) {
               throw new Error("The notebook is not open yet. Wait for Jupyter to load and retry.");
             }
             await widget.context.ready;

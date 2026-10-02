@@ -50,7 +50,7 @@ The two FastAPI nodes represent the same backend service. The dependency drive c
 | Platform component | Role in this app | Implementation and details |
 | --- | --- | --- |
 | Vercel Services and Functions | Deploy frontend and backend together under one origin; FastAPI handles authentication, metadata, persistence, publication, and streamed setup/chat responses. | [vercel.json](../vercel.json), [[backend/main.py]], [[architecture#Services]] |
-| Vercel Sandbox | Run notebook Python and JupyterLab in temporary non-persistent environments with private workspace drives and a read-only dependency drive. The backend injects the current private draft and fresh editor assets. | [[backend/editor.py#start]], [[editing#Prepared dependency environment]] |
+| Vercel Sandbox | Run notebook Python and JupyterLab in one shared non-persistent VM with separate notebook kernels, a durable writable workspace drive, and a read-only dependency drive. The backend injects the current private draft and fresh editor assets. | [[backend/editor.py#start]], [[editing#Prepared dependency environment]] |
 | Vercel Blob | Serve immutable published HTML through the CDN and store the prepared font bundle used to build dependency drives. | [[backend/publication.py#upload]], [[deployment#Published HTML in Blob]], [[editing#Plot font fallback]] |
 | Vercel AI Gateway and AI SDK | Route configured model inference and stream assistant responses; browser tools apply cell edits and execution through the authenticated Jupyter bridge. | [[backend/chat.py#stream]], [[frontend/src/Chat.tsx#Chat]], [[chat#Live document tools]] |
 | Vercel deployment identity | Supply OIDC for backend Sandbox and Gateway access. Blob uses its backend-only read/write token; database and OAuth credentials remain backend configuration. | [[backend/main.py#headers]], [[deployment#Environment configuration]] |
@@ -62,7 +62,7 @@ Public reading, private editing, and AI assistance share the API and database, w
 
 1. **Read:** the browser loads the React app and public notebook metadata, then fetches published HTML directly from Blob into a sandboxed iframe. The API render endpoint supplies a fallback; public viewing does not start a Sandbox or execute cells.
 2. **Edit:** GitHub OAuth establishes the owner session. The API acquires a database lease and opens or reuses a Sandbox. The editor iframe connects directly to JupyterLab, including kernel WebSockets. The browser exports its live document through the bridge and sends autosaved private drafts to the API for Postgres persistence.
-3. **Publish:** Save & exit exports the document, renders HTML in the backend, uploads it to Blob, and commits the published source, fallback HTML, artifact URL, and revision together in Postgres. Publication does not deploy the app. Sandbox shutdown follows persistence.
+3. **Publish:** Save & exit exports the document, renders HTML in the backend, uploads it to Blob, and commits the published source, fallback HTML, artifact URL, and revision together in Postgres. Publication does not deploy the app. The notebook kernel shuts down after persistence; the shared VM stays warm.
 4. **Assist:** the browser sends an authenticated chat turn to FastAPI, which streams inference through AI Gateway. Notebook tool calls return to the browser and act on the live Jupyter document; rename calls the authenticated API. Private chat history is saved separately in Postgres.
 
 ### Deployment and lifetime boundaries
@@ -71,7 +71,7 @@ Application deployments, prepared dependencies, live execution sessions, and dur
 
 [scripts/deploy.sh](../scripts/deploy.sh) prepares immutable font assets and validates or builds the dependency-only drive before deploying both app services. Committed manifests pin these prepared resources; [[deployment#Preparing dependency drives]] describes reuse and rollback requirements.
 
-[[backend/editor.py#generation]] ties editor reuse to the creating deployment so a replacement receives current bridge assets. The shared dependency drive contains no private notebooks or editor tokens. Live Sandboxes are disposable: notebook documents and saved outputs survive in Postgres, while extra installed packages and side files survive on private drives. Kernel memory does not persist. See [[editing#Deployment generations]] and [[editing#Closing and recovery]].
+[[backend/editor.py#generation]] ties editor reuse to the creating deployment so a replacement receives current bridge assets. The shared dependency drive contains no private notebooks or editor tokens. Live Sandboxes are disposable: notebook documents and saved outputs survive in Postgres, while extra installed packages and side files survive on the shared workspace drive. Kernel memory does not persist. See [[editing#Deployment generations]] and [[editing#Closing and recovery]].
 
 Database leases coordinate editor mutations across Function instances. Shutdown and deletion cleanup use response background tasks rather than a durable queue. Public Blob artifacts contain only published content; drafts, chat, and editor capabilities stay behind owner authorization. See [[architecture#Authentication]] and [[architecture#Notebook deletion]].
 
@@ -105,7 +105,7 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 | `render_url` | Immutable public Blob URL for rendered HTML; included in notebook metadata |
 | `published_html` | Pre-rendered HTML for the same published revision; nullable for legacy rows |
 | `created_at`, `updated_at`, `revision` | Creation/publication metadata; draft saves do not change publication time |
-| `editor` | Nullable JSON containing Sandbox name, editor URL, and capability token |
+| `editor` | Nullable JSON containing shared Sandbox name, unique document path, editor URL, and bridge token |
 | `chat_history`, `chat_revision` | Private conversation and optimistic concurrency counter |
 | `claim`, `claim_until` | Atomic operation lease shared across function instances |
 
@@ -145,7 +145,7 @@ Public notebook metadata excludes drafts, editor capabilities, and leases. Respo
 | `GET /api/notebooks/{id}/download` | Published `.ipynb` attachment |
 | `POST /api/notebooks/{id}/editor` | Owner opens/reuses an editor; JSON or event stream depending on Accept |
 | `POST /api/notebooks/{id}/save` | Validates session token, persists draft, optionally publishes |
-| `POST /api/notebooks/{id}/close` | Persists draft, detaches editor, schedules Sandbox shutdown |
+| `POST /api/notebooks/{id}/close` | Persists draft, detaches editor, schedules notebook kernel shutdown |
 | `POST /api/notebooks/{id}/rename` | Owner with current editor token updates the public workspace title |
 | `POST /api/notebooks/{id}/delete` | Owner permanently removes notebook, draft, and chat history; schedules Sandbox and Blob cleanup |
 | `POST /api/notebooks/{id}/discard` | Discards draft, restores published source, and schedules shutdown |
@@ -192,7 +192,7 @@ Opening the app without a notebook query parameter shows a welcome prompt to cho
 
 The owner sees a red outlined trash button in the notebook header. Confirmation names the notebook and explains that its published document, draft, and chat history will be deleted.
 
-[[backend/main.py#delete_notebook]] requires owner authentication and exact Origin, acquires the editor lease, and removes the database row. The UI returns to the unselected view and removes cached sidebar metadata. Background tasks stop any attached Sandbox, remove its private workspace drive, and remove all published Blob artifacts under that notebook's prefix through [[backend/publication.py#remove]]. Cleanup failures are logged; the database deletion remains effective, but this is not a durable cleanup queue and cached public copies may persist.
+[[backend/main.py#delete_notebook]] requires owner authentication and exact Origin, acquires the editor lease, and removes the database row. The UI returns to the unselected view and removes cached sidebar metadata. Background tasks stop the notebook kernel, remove its directory (or record deferred deletion if the shared VM is offline), clean up its legacy private drive, and remove all published Blob artifacts under that notebook's prefix through [[backend/publication.py#remove]]. Cleanup failures are logged; the database deletion remains effective, but this is not a durable cleanup queue and cached public copies may persist.
 
 ## Notebook deletion tests
 
