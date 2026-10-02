@@ -1,4 +1,4 @@
-"""Versioned, dependency-only Sandbox snapshots prepared before deployment."""
+"""Versioned, dependency-only Sandbox drives prepared before deployment."""
 
 import hashlib
 import json
@@ -17,6 +17,7 @@ def fingerprint():
         ASSETS / "sandbox-requirements.lock",
         ASSETS / "fonts.json",
         ASSETS / "install_fonts.py",
+        ASSETS / "initialize_workspace.py",
     ]:
         digest.update(path.name.encode())
         digest.update(path.read_bytes())
@@ -29,7 +30,7 @@ def prepared():
             "Prepare the Sandbox environment with scripts/deploy.sh before deploying."
         )
     value = json.loads(MANIFEST.read_text())
-    if value.get("fingerprint") != fingerprint() or not value.get("snapshot_id"):
+    if value.get("fingerprint") != fingerprint() or not value.get("drive_name"):
         raise RuntimeError("Sandbox dependencies changed. Run scripts/deploy.sh to prepare them.")
     return value
 

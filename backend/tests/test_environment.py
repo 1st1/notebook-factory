@@ -18,12 +18,15 @@ async def test_editor_restores_dependencies_and_injects_current_document(monkeyp
         run_process=AsyncMock(return_value=SimpleNamespace(returncode=0)),
         create_process=AsyncMock(),
         stop=AsyncMock(),
+        destroy=AsyncMock(),
         routes=[SimpleNamespace(port=8888, url="https://sandbox.test")],
     )
+    drive = SimpleNamespace(name="workspace-drive")
+    monkeypatch.setattr(editor.sandbox, "get_or_create_drive", AsyncMock(return_value=drive))
     create = AsyncMock(return_value=instance)
     monkeypatch.setattr(editor.sandbox, "create_sandbox", create)
     monkeypatch.setattr(
-        editor, "prepared", lambda: {"snapshot_id": "snap-prepared", "region": "iad1"}
+        editor, "prepared", lambda: {"drive_name": "deps-drive", "fingerprint": "recipe", "region": "iad1"}
     )
 
     @asynccontextmanager
@@ -38,18 +41,23 @@ async def test_editor_restores_dependencies_and_injects_current_document(monkeyp
 
     monkeypatch.setattr(editor, "session", session)
     monkeypatch.setattr(editor.httpx, "AsyncClient", http_client)
-    result = await editor.start("private notebook source")
-    assert create.call_args.kwargs["source"].snapshot_id == "snap-prepared"
+    result = await editor.start("private notebook source", notebook_id="test-notebook")
+    assert "source" not in create.call_args.kwargs
+    assert create.call_args.kwargs["mounts"]["/vercel"] is drive
+    assert create.call_args.kwargs["mounts"]["/notebook-base"].mode == "snapshot"
     assert create.call_args.kwargs["persistent"] is False
     batch.write_text.assert_any_call("notebook.ipynb", "private notebook source")
     assert any(
         c.args[0] == ".vercel-notebook-jupyter-bridge.js" for c in batch.write_text.call_args_list
     )
     assert instance.run_process.await_args_list[0].args == (
+        "python3", [".initialize-workspace.py", "recipe"],
+    )
+    assert instance.run_process.await_args_list[1].args == (
         ".venv/bin/python",
         [".patch-jupyter-template.py"],
     )
-    assert instance.run_process.await_count == 1  # No dependency or font installation.
+    assert instance.run_process.await_count == 2  # No dependency or font installation.
     assert result["token"] in result["url"]
 
 
@@ -63,16 +71,44 @@ def test_dependency_changes_invalidate_prepared_manifest(tmp_path, monkeypatch):
         "sandbox-requirements.lock",
         "fonts.json",
         "install_fonts.py",
+        "initialize_workspace.py",
     ]:
         (tmp_path / name).write_text("original")
     with pytest.raises(RuntimeError, match="Prepare"):
         environment.prepared()
     environment.MANIFEST.write_text(
         json.dumps(
-            {"fingerprint": environment.fingerprint(), "snapshot_id": "snap-test", "region": "iad1"}
+            {"fingerprint": environment.fingerprint(), "drive_name": "deps-test", "region": "iad1"}
         )
     )
-    assert environment.prepared()["snapshot_id"] == "snap-test"
+    assert environment.prepared()["drive_name"] == "deps-test"
     (tmp_path / "sandbox-requirements.lock").write_text("changed")
     with pytest.raises(RuntimeError, match="dependencies changed"):
         environment.prepared()
+
+
+async def test_stop_flushes_drive_before_destroying_sandbox(monkeypatch):
+    events = []
+
+    async def stop():
+        events.append("stop")
+
+    async def destroy():
+        assert events == ["stop"]
+        events.append("destroy")
+
+    instance = SimpleNamespace(stop=stop, destroy=destroy)
+    monkeypatch.setattr(editor.sandbox, "get_sandbox", AsyncMock(return_value=instance))
+
+    @asynccontextmanager
+    async def session():
+        yield
+
+    monkeypatch.setattr(editor, "session", session)
+    await editor.stop({"name": "test"})
+    assert events == ["stop", "destroy"]
+
+
+def test_workspace_names_are_stable_and_isolated():
+    assert editor.workspace_drive_name("one") == editor.workspace_drive_name("one")
+    assert editor.workspace_drive_name("one") != editor.workspace_drive_name("two")

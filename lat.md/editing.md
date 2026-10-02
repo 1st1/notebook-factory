@@ -6,11 +6,11 @@ A notebook's durable document lives in Postgres. JupyterLab provides temporary e
 
 [[backend/main.py#provision_editor]] reuses a reachable editor or creates a replacement from the durable draft. Transient provider failures preserve the existing session instead of silently replacing it.
 
-[[backend/editor.py#start]] creates a randomly named Sandbox with port 8888 and an initial 15-minute execution limit. It restores the prepared dependency snapshot, then writes the current `notebook.ipynb`, fresh editor assets, settings, and capability token. Document, bridge, and settings files upload in one filesystem batch. Editor Sandboxes are non-persistent; their documents remain in Postgres.
+[[backend/editor.py#start]] creates a randomly named Sandbox with port 8888 and an initial 15-minute execution limit. It mounts a private workspace drive at `/vercel` and the shared dependency drive read-only at `/notebook-base`, then writes the current `notebook.ipynb`, fresh editor assets, settings, and capability token. Document, bridge, and settings files upload in one filesystem batch. Editor Sandboxes use `persistent=False`, so stop does not snapshot them. Postgres remains authoritative for notebook documents; the private drive retains packages and side files.
 
 Users and the assistant can run `%pip install numpy matplotlib` in a code cell to install packages into the active kernel environment. The assistant prompt recommends this notebook-native syntax.
 
-The snapshot already includes Python 3.13, pip, pinned JupyterLab, NumPy, pandas, SciPy, Matplotlib, Seaborn, and prepared fonts. There is no interactive dependency installation. After configuration, the backend starts Jupyter and polls its public route for up to 45 seconds before declaring failure.
+The dependency drive already includes Python 3.13, pip, pinned JupyterLab, NumPy, pandas, SciPy, Matplotlib, Seaborn, and prepared fonts. There is no interactive dependency installation. After configuration, the backend starts Jupyter and polls its public route for up to 45 seconds before declaring failure.
 
 Files in [backend/assets](../backend/assets) supply focused editor CSS, the message bridge, a SQLite compatibility shim, a launcher, and a template patch. These were adapted from `/Users/yury/dev/vercel/vercel-py`, branch `nb_next`, commit `8296336`; the upstream license is retained in [backend/assets/LICENSE](../backend/assets/LICENSE).
 
@@ -65,7 +65,7 @@ Reconnect first persists the browser document and detaches the old session, then
 
 Background shutdown errors are logged; the Sandbox execution limit bounds its remaining lifetime. This background task is not a durable job queue. Reopening after close provisions a fresh environment from the stored draft.
 
-Notebook documents and their saved outputs persist. Kernel memory, uploaded side files, and extra installed dependencies do not. Closing the browser stops app autosaves/heartbeats, so changes since the last successful durable save can be lost. A before-unload warning is advisory, not persistence.
+Notebook documents and their saved outputs persist in Postgres. Uploaded side files and extra installed dependencies persist on the private drive; kernel memory does not. Exit discards notebook edits, not installed packages or side files. Closing the browser stops app autosaves/heartbeats, so changes since the last successful durable save can be lost. A before-unload warning is advisory, not persistence.
 
 ## Save serialization
 
@@ -83,7 +83,7 @@ The focused CSS, shell panel hiding, resize/refit scheduling, HTML template inje
 
 The reference bridge synthesizes Cmd/Ctrl+S and polls the dirty-tab CSS marker for completion. It has no save serialization or conflict-check override. Notebook Factory instead awaits the document save API, queues saves, and verifies the parent origin as well as the window and token.
 
-The reference requests a named persistent Sandbox with snapshot retention and only uploads the notebook when creating it. It checks for an existing Jupyter process, streams startup process output, and detects early process exit while polling readiness. Notebook Factory uses temporary Sandboxes restored from database drafts and streams installation output; Jupyter logs are retained for startup diagnostics.
+The reference requests a named persistent Sandbox with snapshot retention and only uploads the notebook when creating it. It checks for an existing Jupyter process, streams startup process output, and detects early process exit while polling readiness. Notebook Factory uses temporary non-persistent Sandboxes with durable workspace drives and restores documents from database drafts; Jupyter logs are retained for startup diagnostics.
 
 Reference publishing verifies hashes of prepared notebook/HTML files and creates a Vercel deployment. Notebook Factory publishes by copying the durable draft to the database's public document. The reference's wildcard origin/frame allowances, hardcoded workspace paths, and keyboard-driven save bridge are not used here.
 
@@ -91,9 +91,9 @@ Reference publishing verifies hashes of prepared notebook/HTML files and creates
 
 Editor environments belong to the deployment that created them. Opening or reconnecting after a deployment replaces an older environment instead of reusing its embedded Jupyter bridge.
 
-[[backend/editor.py#generation]] uses Vercel's deployment ID (deployment URL fallback); local development hashes bundled editor assets, provisioning code, and Python dependency declarations. Legacy sessions without a generation are stale. This policy governs live editor reuse. The shared dependency snapshot contains no notebook, bridge, app origin, or editor token, so it can be reused while each deployment injects fresh app assets.
+[[backend/editor.py#generation]] uses Vercel's deployment ID (deployment URL fallback); local development hashes bundled editor assets, provisioning code, and Python dependency declarations. Legacy sessions without a generation are stale. This policy governs live editor reuse. The shared dependency drive contains no notebook, bridge, app origin, or editor token, so it can be reused while each deployment injects fresh app assets.
 
-[[backend/main.py#provision_editor]] recovers the old Sandbox's latest saved notebook into the database before provisioning its replacement. It keeps the old environment if recovery or startup fails and stops it only after the new session is committed. Once replaced, old session tokens cannot save or publish. Unopened stale environments expire normally; already-open browsers are not forcibly interrupted at deployment time.
+[[backend/main.py#provision_editor]] recovers the old Sandbox's latest saved notebook into the database before provisioning its replacement. Recovery failures leave the old environment intact. After a successful database backup, it stops the old session before creating the replacement because a drive allows only one writer. If replacement startup fails, the durable draft and drive remain available for retry. Once replaced, old session tokens cannot save or publish. Unopened stale environments expire normally; already-open browsers are not forcibly interrupted at deployment time.
 
 A regression changes deployment generations, verifies same-deployment reuse, failed-replacement recovery, unpublished draft preservation, successful replacement, and stale-token rejection. App reconnect preserves browser-only edits through direct export before replacing the environment; automatic deployment replacement without an attached browser can only preserve an already-saved draft.
 
@@ -103,7 +103,7 @@ New Sandboxes install Noto Emoji and Noto Sans JP alongside Matplotlib's default
 
 [[scripts/prepare_fonts.py#prepare]] builds static regular and bold faces once from pinned, checksum-verified Google Fonts sources, retains OFL licenses, and publishes an immutable ZIP to Blob. The committed [font manifest](../backend/assets/fonts.json) pins its URL and SHA-256 digest.
 
-[[backend/assets/install_fonts.py#install]] downloads, verifies, and unpacks that bundle during snapshot preparation before configuring Matplotlib. Interactive Sandboxes inherit installed fonts and do not download or convert them. Setup logs report download/install duration. Existing environments require reconnecting after deployment; existing plot outputs must be rerun.
+[[backend/assets/install_fonts.py#install]] downloads, verifies, and unpacks that bundle during dependency drive preparation before configuring Matplotlib. Interactive Sandboxes inherit installed fonts and do not download or convert them. Setup logs report download/install duration. Existing environments require reconnecting after deployment; existing plot outputs must be rerun.
 
 ## Font bundle verification
 
@@ -113,17 +113,19 @@ Live Sandbox checks render normal and bold emoji/Japanese labels, rejecting both
 
 ## Prepared dependency environment
 
-[[backend/sandbox_environment.py]] defines a dependency-only snapshot, built and verified by [[scripts/prepare_sandbox.py#prepare]] before deployment. The committed manifest selects an immutable snapshot in iad1.
+[[backend/sandbox_environment.py]] defines a versioned dependency drive, built and verified by [[scripts/prepare_sandbox.py#prepare]] before deployment. The committed manifest pins the drive name and region.
 
-Its fingerprint covers installation code, direct requirements, the complete dependency lock, and font inputs. Changed inputs require a new snapshot; unchanged deploys validate and reuse the existing one. Missing or deleted snapshots rebuild during preparation. Provider/auth failures abort deployment. Snapshots do not expire automatically, allowing older deployments to retain their pinned environment for rollback.
+The builder installs Python, locked dependencies, and fonts once in a clean Sandbox, then copies the runtime directories to the dependency drive, excluding uv's installation cache. It stops gracefully to flush the drive before a separate read-only mount verifies a seeded environment. The manifest is written only after verification. Previous dependency drives remain available for deployments that reference them.
 
-The builder installs into a clean Sandbox, warms Matplotlib's cache, then snapshots before any user document or editor assets are written. A separate restored Sandbox verifies imports and absence of notebook data before the manifest is published. Editor sessions restore that snapshot with persistence disabled, avoiding snapshots of private notebook content. Startup never silently falls back to a long dependency installation.
+[[backend/assets/initialize_workspace.py]] seeds a notebook's private drive on first use or when the dependency fingerprint changes. Subsequent opens skip the copy and preserve additional pip packages. A dependency change replaces managed environment directories but preserves other user files. Every open overwrites notebook.ipynb from Postgres and injects current editor assets and a fresh capability.
+
+[[backend/editor.py#workspace_drive_name]] deterministically identifies each notebook's drive. Normal shutdown gracefully stops the non-persistent Sandbox, flushing and detaching the drive, then destroys the Sandbox metadata. Brief drive attachment conflicts retry while the previous editor closes. Deleting a notebook also schedules drive deletion through [[backend/editor.py#delete_workspace]]. Cleanup uses background tasks, not a durable queue.
 
 ## Prepared environment tests
 
-Regressions verify editors restore the selected snapshot without installing packages, write the current notebook and bridge, and use non-persistent sessions. Dependency changes invalidate the prepared manifest.
+Regressions verify private writable and shared read-only drives, fresh notebook assets, non-persistent sessions, and dependency fingerprint invalidation. Shutdown must flush the drive before destroying the Sandbox.
 
-Live checks additionally verify snapshot creation, restoration, kernel execution, fonts, and startup timing.
+Live checks additionally verify Drive seeding, kernel execution, preserved files and installed modules across stop/reopen, authoritative notebook replacement, and startup timing.
 
 
 ## Browser recovery tests

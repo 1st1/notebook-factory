@@ -36,24 +36,38 @@ def generation():
     return "local-" + digest.hexdigest()[:16]
 
 
-async def start(source: str, report=lambda kind, message: None):
+def workspace_drive_name(notebook_id: str):
+    return "nf-workspace-" + hashlib.sha256(notebook_id.encode()).hexdigest()[:32]
+
+
+async def start(source: str, report=lambda kind, message: None, *, notebook_id: str):
     token = secrets.token_urlsafe(32)
     name = "nf-" + secrets.token_hex(12)
     async with session():
         environment = prepared()
-        report("progress", "Restoring your prepared Python environment…")
-        instance = await sandbox.create_sandbox(
-            name=name,
-            ports=[PORT],
-            execution_time_limit=900,
-            persistent=False,
-            region=environment["region"],
-            source=sandbox.SnapshotSource(snapshot_id=environment["snapshot_id"]),
+        report("progress", "Attaching your notebook workspace…")
+        drive = await sandbox.get_or_create_drive(
+            name=workspace_drive_name(notebook_id), region=environment["region"],
+            max_size_bytes=4 * 1024**3,
         )
+        for attempt in range(30):
+            try:
+                instance = await sandbox.create_sandbox(
+                    name=name, ports=[PORT], execution_time_limit=900, persistent=False,
+                    region=environment["region"],
+                    mounts={"/vercel": drive, "/notebook-base": sandbox.DriveMount(environment["drive_name"], mode="snapshot")},
+                )
+                break
+            except sandbox.SandboxApiError as error:
+                if error.status_code != 409 or attempt == 29:
+                    raise
+                report("progress", "Waiting for the previous editor to release its workspace…")
+                await anyio.sleep(1)
         try:
             files = {"notebook.ipynb": source}
             report("progress", "Configuring the notebook editor…")
             for filename, target in {
+                "initialize_workspace.py": ".initialize-workspace.py",
                 "jupyter_launcher.py": ".notebook-editor.py",
                 "patch_jupyter_template.py": ".patch-jupyter-template.py",
                 "sitecustomize.py": "sitecustomize.py",
@@ -90,6 +104,12 @@ async def start(source: str, report=lambda kind, message: None):
             async with instance.fs.batch() as batch:
                 for target, content in files.items():
                     batch.write_text(target, content)
+            report("progress", "Preparing workspace dependencies (cached after first use)…")
+            initialized = await instance.run_process(
+                "python3", [".initialize-workspace.py", environment["fingerprint"]], capture_output=True,
+            )
+            if initialized.returncode:
+                raise RuntimeError("Workspace dependency initialization failed")
             patch = await instance.run_process(
                 ".venv/bin/python", [".patch-jupyter-template.py"], capture_output=True
             )
@@ -148,6 +168,7 @@ async def start(source: str, report=lambda kind, message: None):
         except BaseException:
             with anyio.CancelScope(shield=True):
                 await instance.stop()
+                await instance.destroy()
             raise
 
 
@@ -180,8 +201,28 @@ async def read(editor: dict, *, extend=True):
 
 async def stop(editor: dict):
     async with session():
-        instance = await sandbox.get_sandbox(name=editor["name"])
+        try:
+            instance = await sandbox.get_sandbox(name=editor["name"])
+        except sandbox.SandboxApiError as error:
+            if error.status_code == 404:
+                return
+            raise
         await instance.stop()
+        await instance.destroy()
+
+
+async def delete_workspace(notebook_id: str):
+    async with session():
+        for attempt in range(30):
+            try:
+                await sandbox.delete_drive(name=workspace_drive_name(notebook_id))
+                return
+            except sandbox.SandboxApiError as error:
+                if error.status_code == 404:
+                    return
+                if error.status_code != 409 or attempt == 29:
+                    raise
+                await anyio.sleep(1)
 
 
 async def keep_alive(editor: dict):

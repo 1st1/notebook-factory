@@ -6,7 +6,7 @@ The editor's Chat button opens a right sidebar where the assistant can read, edi
 
 ## Agent and streaming
 
-[[backend/chat.py]] streams through Vercel AI Gateway with five browser-executed notebook tools. The model never receives Sandbox credentials or a general server-side execution tool.
+[[backend/chat.py]] streams through Vercel AI Gateway with five browser-executed document tools and an authenticated notebook rename tool. The model never receives Sandbox credentials or a general server-side execution tool.
 
 The default model is GPT-6 Luna, configurable with AI_MODEL. The chat header displays the model ID returned by the server, using the same configuration as inference. Medium reasoning effort requests reasoning; provider-visible reasoning is optional, and the UI streams it in an expandable Thoughts section, open while streaming and collapsed afterward. A spinner accompanies waiting and tool-execution status. Deployment uses Vercel OIDC; local development can load VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY. Gateway access and credits are required. A free-tier model rejection displays an explicit instruction to add paid Gateway credits. Notebook sources and text outputs are sent to the model when it reads the document.
 
@@ -81,3 +81,14 @@ Navigation and editor exit wait for pending history saves. Save failures remain 
 API regressions verify history survives draft discard and editor replacement, interrupted tools become inert history, stale revisions and tokens fail, New chat clears history, and public or unauthorized requests cannot read it.
 
 Browser checks cover restoration without model/tool replay, completed-turn persistence, save failure/retry, and clearing persisted history.
+
+
+## Notebook renaming
+
+The assistant can rename the current notebook when the user asks. The header, sidebar, and cached notebook metadata update immediately after a successful response.
+
+The rename tool calls [[backend/main.py#rename_notebook]], requiring owner authentication, exact Origin, and the current editor token under the editor lease. Titles are trimmed, nonempty, and limited to 120 characters. This changes public workspace metadata immediately and survives Exit; it does not change cells, publication revision, or the Sandbox filename. Rename-only requests receive a brief chat confirmation without adding notebook cells.
+
+## Notebook rename tests
+
+API coverage checks owner and Origin enforcement, stale editor tokens, blank and oversized titles, persistence of trimmed titles, and preservation of published document contents.

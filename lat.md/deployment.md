@@ -130,10 +130,10 @@ Previously published Blob URLs remain public; this implementation does not garba
 
 When changing the preparation script, run `uv run scripts/prepare_fonts.py` with BLOB_READ_WRITE_TOKEN set, or pass `--env-file` pointing to a private environment file. Commit the resulting [manifest](../backend/assets/fonts.json) alongside the script. The builder pins fontTools and upstream font checksums; the recipe hash invalidates prepared assets when its source changes. Git-based deployments use the committed manifest directly. Blob credentials remain outside the Sandbox, which only receives a public asset URL and checksum.
 
-## Preparing the Sandbox snapshot
+## Preparing dependency drives
 
 The deploy helper runs `uv run --project backend python scripts/prepare_sandbox.py` after preparing fonts. Vercel credentials must access the linked project; local execution can load its OIDC credentials from `.env.local`.
 
-[[scripts/prepare_sandbox.py#prepare]] validates the committed dependency snapshot or builds and restores a replacement before deployment. Commit [backend/assets/sandbox-environment.json](../backend/assets/sandbox-environment.json) after rebuilding. Git-based deployments use this manifest directly. Keep previous snapshots while deployments referencing them are retained; retired snapshots can be removed through Vercel separately.
+[[scripts/prepare_sandbox.py#prepare]] validates the committed dependency drive or builds and verifies a replacement before deployment. Commit [backend/assets/sandbox-environment.json](../backend/assets/sandbox-environment.json) after rebuilding. Git-based deployments use this manifest directly. Keep previous dependency drives while deployments referencing them are retained. A missing pinned drive fails preparation explicitly; remove its stale manifest and rerun preparation to rebuild. Retired drives and legacy Sandbox snapshots can be removed through Vercel separately.
 
 Update [direct dependencies](../backend/assets/sandbox-requirements.in), then regenerate [the lock](../backend/assets/sandbox-requirements.lock) with `uv pip compile backend/assets/sandbox-requirements.in --python-version 3.13 --python-platform x86_64-manylinux_2_28 --output-file backend/assets/sandbox-requirements.lock` before preparation. No local Docker engine is required.

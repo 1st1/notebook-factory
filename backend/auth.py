@@ -47,6 +47,8 @@ def cookie(response, name, value, age):
 @router.get("/me")
 async def me(request: Request):
     current = user(request)
+    if current and not current.get("avatar_url") and isinstance(current.get("id"), int):
+        current = {**current, "avatar_url": f"https://avatars.githubusercontent.com/u/{current['id']}?s=64"}
     return {
         "user": current,
         "chat_model": chat_model(),
@@ -111,7 +113,10 @@ async def callback(request: Request, code: str = "", state: str = ""):
     cookie(
         response,
         COOKIE,
-        signer.dumps({"login": data["login"], "id": data["id"]}, salt="session"),
+        signer.dumps(
+            {"login": data["login"], "id": data["id"], "avatar_url": data.get("avatar_url")},
+            salt="session",
+        ),
         604800,
     )
     response.delete_cookie("nf_oauth", path="/")

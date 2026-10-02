@@ -54,6 +54,11 @@ class EditorRequest(BaseModel):
     source: str | None = Field(default=None, max_length=10 * 1024 * 1024)
 
 
+class RenameNotebook(BaseModel):
+    token: str = Field(max_length=256)
+    title: str = Field(min_length=1, max_length=120)
+
+
 async def get_notebook(id):
     async with engine.connect() as conn:
         row = (await conn.execute(select(notebooks).where(notebooks.c.id == id))).mappings().first()
@@ -278,10 +283,13 @@ async def provision_editor(id, claim, report=None):
             except Exception:
                 # Preserve the previous session on transient provider errors.
                 raise HTTPException(502, "Could not reach the editor. Try again shortly.") from None
+        if retired:
+            await editor.stop(retired)
+            retired = None
         created = (
-            await editor.start(row["source"], report)
+            await editor.start(row["source"], report, notebook_id=id)
             if report
-            else await editor.start(row["source"])
+            else await editor.start(row["source"], notebook_id=id)
         )
         created = {**created, "generation": generation}
         async with engine.begin() as conn:
@@ -377,6 +385,18 @@ async def close(id: str, body: EditorRequest, background_tasks: BackgroundTasks)
         return {"closed": True}
 
 
+@app.post("/api/notebooks/{id}/rename", dependencies=[Depends(require_owner)])
+async def rename_notebook(id: str, body: RenameNotebook):
+    title = body.title.strip()
+    if not title:
+        raise HTTPException(422, "Enter a notebook title")
+    async with editor_lease(id):
+        await checked_editor(id, body.token)
+        async with engine.begin() as conn:
+            await conn.execute(update(notebooks).where(notebooks.c.id == id).values(title=title))
+    return {"id": id, "title": title}
+
+
 @app.post("/api/notebooks/{id}/delete", dependencies=[Depends(require_owner)])
 async def delete_notebook(id: str, background_tasks: BackgroundTasks):
     async with editor_lease(id):
@@ -390,6 +410,10 @@ async def delete_notebook(id: str, background_tasks: BackgroundTasks):
 
 
 async def delete_notebook_artifacts(id: str):
+    try:
+        await editor.delete_workspace(id)
+    except Exception:
+        log.exception("Could not remove notebook workspace drive for %s", id)
     try:
         await publication.remove(id)
     except Exception:

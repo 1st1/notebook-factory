@@ -27,7 +27,7 @@ type Notebook = {
   render_url?: string | null;
 };
 type Auth = {
-  user: { login: string } | null;
+  user: { login: string; avatar_url?: string } | null;
   can_edit: boolean;
   configured: boolean;
   chat_model?: string;
@@ -173,6 +173,14 @@ function App() {
   const frame = useRef<HTMLIFrameElement>(null);
   const saving = useRef(false);
   const notebook = notebooks.find((n) => n.id === selected);
+
+  const renameNotebook = useCallback((id: string, title: string) => {
+    setNotebooks(items => {
+      const renamed = items.map(item => item.id === id ? { ...item, title } : item);
+      try { sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: renamed })); } catch { /* Storage is optional. */ }
+      return renamed;
+    });
+  }, []);
 
   const refresh = useCallback(async () => {
     await Promise.all([
@@ -442,7 +450,16 @@ function App() {
         <div className="sidebar-bottom">
           {auth.user ? (
             <div className="account">
-              <span className="avatar">{auth.user.login[0].toUpperCase()}</span>
+              <span className="avatar" aria-hidden="true">
+                {auth.user.login[0].toUpperCase()}
+                {auth.user.avatar_url && <img
+                  key={auth.user.avatar_url}
+                  src={auth.user.avatar_url}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  onError={event => { event.currentTarget.style.display = "none"; }}
+                />}
+              </span>
               <span>
                 <strong>{auth.user.login}</strong>
                 <small>{auth.can_edit ? "Workspace owner" : "Reader"}</small>
@@ -633,7 +650,7 @@ function App() {
                 />
               )}
             </div>
-            {editor && <Suspense fallback={null}><Chat model={auth.chat_model} key={editor.token} notebookId={selected!} editor={editor} frame={frame} disabled={!!busy || closing} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy}/></Suspense>}
+            {editor && <Suspense fallback={null}><Chat model={auth.chat_model} key={editor.token} notebookId={selected!} editor={editor} frame={frame} disabled={!!busy || closing} open={chatOpen} onClose={() => setChatOpen(false)} onBusy={setChatBusy} onRename={renameNotebook}/></Suspense>}
             </div>
           </>
         ) : notebooks.length > 0 ? (

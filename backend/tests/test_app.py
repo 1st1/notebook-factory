@@ -43,6 +43,7 @@ def create(client):
         ("/api/notebooks/missing/close", {"token": "x"}),
         ("/api/notebooks/missing/discard", {"token": "x"}),
         ("/api/notebooks/missing/delete", {}),
+        ("/api/notebooks/missing/rename", {"token": "x", "title": "New title"}),
         ("/api/notebooks/missing/chat", {"token": "x", "messages": []}),
     ],
 )
@@ -158,7 +159,7 @@ def test_simultaneous_editor_start_is_serialized(client, monkeypatch):
     id = create(client)
     entered, release = Event(), Event()
 
-    async def start(source):
+    async def start(source, *, notebook_id):
         entered.set()
         await anyio.to_thread.run_sync(lambda: release.wait(5))
         return {"name": "one", "token": "one", "url": "https://example.test"}
@@ -223,7 +224,7 @@ def test_setup_stream_progress_ready_and_reuse(client, monkeypatch):
         "token": "t",
     }
 
-    async def start(source, report):
+    async def start(source, report, *, notebook_id):
         report("progress", "Installing Python and JupyterLab…")
         report("log", "Installing ipykernel\n")
         return result
@@ -523,7 +524,8 @@ def test_deployment_replaces_editor_without_losing_saved_draft(client, monkeypat
     monkeypatch.setattr(main.editor, "generation", lambda: "deployment-b")
     start.side_effect = RuntimeError("Unavailable")
     assert client.post(f"/api/notebooks/{id}/editor", json={}).status_code == 502
-    stop.assert_not_awaited()
+    stop.assert_awaited_once_with(first)
+    stop.reset_mock()
     row = client.portal.call(main.get_notebook, id)
     assert "Recovered draft" in row["source"]
     assert "Recovered draft" not in row["published"]
@@ -633,11 +635,33 @@ def test_delete_removes_notebook_and_stops_editor(client, monkeypatch):
     remove = AsyncMock()
     monkeypatch.setattr(main.editor, "stop", stop)
     monkeypatch.setattr(main.publication, "remove", remove)
+    delete_workspace = AsyncMock()
+    monkeypatch.setattr(main.editor, "delete_workspace", delete_workspace)
     assert client.post(f"/api/notebooks/{id}/editor", json={}).status_code == 200
     assert client.post(f"/api/notebooks/{id}/delete", json={}).status_code == 200
     stop.assert_awaited_once_with(current)
     remove.assert_awaited_once_with(id)
+    delete_workspace.assert_awaited_once_with(id)
     assert all(item["id"] != id for item in client.get("/api/notebooks").json())
     for suffix in ("render", "download"):
         assert client.get(f"/api/notebooks/{id}/{suffix}").status_code == 404
     assert client.post(f"/api/notebooks/{id}/delete", json={}).status_code == 404
+
+
+# @lat: [[chat#Notebook rename tests]]
+def test_rename_notebook_requires_current_editor_and_valid_title(client, monkeypatch):
+    id = create(client)
+    original = client.get(f"/api/notebooks/{id}/download").text
+    current = {"name": "rename", "token": "secret", "url": "https://example.test"}
+    monkeypatch.setattr(main.editor, "start", AsyncMock(return_value=current))
+    assert client.post(f"/api/notebooks/{id}/editor", json={}).status_code == 200
+    route = f"/api/notebooks/{id}/rename"
+    assert client.post(route, json={"token": "stale", "title": "No"}).status_code == 409
+    for title in (" ", "x" * 121):
+        assert client.post(route, json={"token": "secret", "title": title}).status_code == 422
+    response = client.post(route, json={"token": "secret", "title": "  Better title  "})
+    assert response.json() == {"id": id, "title": "Better title"}
+    item = next(row for row in client.get("/api/notebooks").json() if row["id"] == id)
+    assert item["title"] == "Better title"
+    assert item["revision"] == 1
+    assert client.get(f"/api/notebooks/{id}/download").text == original

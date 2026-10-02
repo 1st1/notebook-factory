@@ -19,6 +19,7 @@ export function Chat({
   open,
   onClose,
   onBusy,
+  onRename,
   disabled,
 }: {
   notebookId: string;
@@ -29,6 +30,7 @@ export function Chat({
   disabled: boolean;
   onClose: () => void;
   onBusy: (busy: boolean) => void;
+  onRename: (id: string, title: string) => void;
 }) {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(0);
@@ -77,6 +79,20 @@ export function Chat({
             throw new Error(
               "Tool limit reached. Send another message to continue.",
             );
+          if (toolCall.toolName === "rename_notebook") {
+            const args = toolCall.input as { title?: unknown };
+            const response = await fetch(`/api/notebooks/${notebookId}/rename`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token: editor.token, title: args?.title }),
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Could not rename notebook.");
+            onRename(result.id, result.title);
+            failures.current = 0;
+            if (active.current) await addToolOutput({ tool: toolCall.toolName, toolCallId: toolCall.toolCallId, output: result });
+            return;
+          }
           const target = frame.current?.contentWindow;
           if (!target) throw new Error("Editor is unavailable.");
           const origin = new URL(editor.url).origin;

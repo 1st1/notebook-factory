@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { LoaderCircle } from "lucide-react";
 
 const labels: Record<string, string> = {
+  rename_notebook: "Rename notebook",
   read_notebook: "Read notebook",
   insert_cell: "Add cell",
   replace_cell: "Edit cell",

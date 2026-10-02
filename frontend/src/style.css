@@ -260,6 +260,9 @@ nav {
   margin-left: auto;
 }
 .avatar {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
   width: 30px;
   height: 30px;
   border-radius: 50%;
@@ -267,6 +270,13 @@ nav {
   place-items: center;
   background: #dce3d2;
   color: #57664b;
+}
+.avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .account strong {
   font-size: 12px;

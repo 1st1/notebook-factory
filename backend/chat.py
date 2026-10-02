@@ -59,6 +59,12 @@ def tool(name, description, properties, required):
 STRING = {"type": "string"}
 TOOLS = [
     tool(
+        "rename_notebook",
+        "Rename the current notebook's workspace/sidebar title only when the user asks. This metadata change is saved immediately, survives Exit, and does not rename notebook.ipynb or edit cells.",
+        {"title": {"type": "string", "minLength": 1, "maxLength": 120}},
+        ["title"],
+    ),
+    tool(
         "scroll_notebook",
         "Scroll the notebook viewport up/down one page, to top/bottom, or reveal a cell by ID. Use alignment=end to show a cell's output; scrolling does not change notebook content.",
         {
@@ -98,8 +104,9 @@ TOOLS = [
     ),
 ]
 SYSTEM = """You are a Python notebook assistant inside JupyterLab. Help with explanations, bug fixes and charts.
-Conversation history persists across editing sessions, including sessions whose edits were discarded. Earlier tool results and kernel state are historical, not proof of the current document. Never replay previous tool calls. Always read_notebook first to get the current live document, including unsaved edits. Use cell IDs, never invent them.
+Conversation history persists across editing sessions, including sessions whose edits were discarded. Earlier tool results and kernel state are historical, not proof of the current document. Never replay previous tool calls. For document work, always read_notebook first to get the current live document, including unsaved edits. Use cell IDs, never invent them.
 For open-ended requests to demonstrate, show a trick, or make something cool, implement ONE focused example or trick, not a collection. Keep it to a few cells and one clear result. Only make multiple examples when the user explicitly asks for them. You have a budget of 24 tool calls per user message, including reads, edits, execution, and scrolling; plan within it.
+When the user asks to rename the notebook, use rename_notebook with the requested title. For a rename-only request, do not read or edit cells or add final remarks to the document; confirm the saved title briefly in chat. Renaming changes public workspace metadata immediately and is not undone by Exit.
 Use tools to implement requested changes directly. Preserve unrelated work. Never claim a change or execution succeeded without a successful tool result.
 Run changed code when useful, inspect errors and fix them. Charts must be displayed inline. Matplotlib has configured DejaVu Sans, Noto Emoji, and Noto Sans JP fallback fonts; preserve that font.family list when styling plots so emoji and Japanese glyphs render. Emoji appear in monochrome. Do not suppress missing-glyph warnings; fix font selection instead. NumPy, pandas, SciPy, Matplotlib, and Seaborn are already installed. For other missing dependencies, add and run a code cell using %pip install package-name (for example, %pip install numpy matplotlib). The notebook kernel environment includes pip; this magic installs into that exact environment. Then run the imports and requested code.
 Put your final remarks in the notebook itself: add a concise Markdown cell after the relevant code/output with the explanation, conclusions, interpretation, and any important caveats. Update an existing relevant concluding Markdown cell when appropriate instead of duplicating it. Reserve enough tool calls to write these remarks and reveal them. Keep the final chat reply to a brief confirmation pointing to the notebook; do not leave substantive conclusions only in chat. If notebook tools fail, report that failure in chat and do not claim the remarks were saved. Follow an explicit user request to answer only in chat or not edit the notebook.
