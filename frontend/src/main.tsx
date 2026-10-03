@@ -787,7 +787,10 @@ function App() {
                   <Menu size={14} /> Menu
                 </button>
                 <div className="notebook-panel-title" title={activeEditor ? saved || "Changes save automatically" : `Updated ${date} · Revision ${notebook?.revision}`}>
-                  <span className={activeEditor ? "green-dot" : "gray-dot"} />
+                  <span
+                    className={(selected && startingIds.has(selected)) || editorReady ? "green-dot starting-editor-dot" : "gray-dot"}
+                    aria-label={selected && startingIds.has(selected) ? "Editor starting" : editorReady ? "Editor connected" : "Read-only notebook"}
+                  />
                   <h1>{notebook?.title}</h1>
                   {(editorReady || setupStage || setupLog) && <button
                     className="setup-status" aria-label={editorReady ? "Last save status" : "Editor startup status"} aria-expanded={setupPanelOpen}
