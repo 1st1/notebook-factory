@@ -10,6 +10,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
   GitFork,
   Download,
   LoaderCircle,
@@ -647,7 +648,7 @@ function App() {
             if (editor?.ready) void saveEditor(editor).catch(() => setError("Could not save the notebook draft; autosave will retry."));
             if (!about) history.pushState({}, "", "/about");
             setAbout(true); setMobile(false);
-          }}>How it’s built <ArrowUpRight size={13} /></a>
+          }}><CircleHelp size={17} aria-hidden="true" /><span>How it’s built</span><ArrowUpRight className="about-link-arrow" size={13} aria-hidden="true" /></a>
         <button
           className="new-button"
           disabled={!!busy || (!!auth.user && !auth.can_edit)}

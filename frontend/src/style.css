@@ -859,7 +859,8 @@ button:focus-visible, a:focus-visible, input:focus-visible:not(.search input), t
 iframe { color-scheme: dark; }
 
 /* About: a compact architecture tour, with the same dark workspace surfaces. */
-.about-link { display: flex; justify-content: space-between; align-items: center; color: var(--foreground); font-size: 12px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 2px; }
+.about-link { display: flex; gap: 10px; align-items: center; color: var(--foreground); font-size: 12px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 2px; }
+.about-link-arrow { margin-left: auto; }
 .about-link:hover, .about-link[aria-current="page"] { background: #171717; border-color: #666; }
 .about-page { overflow: auto; overscroll-behavior: contain; flex: 1; min-height: 0; padding: 24px; }
 .about-content { max-width: 860px; margin: 0 auto; }
@@ -880,6 +881,8 @@ iframe { color-scheme: dark; }
 @media (max-width: 650px) { .about-page { padding: 16px; } .about-component { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
 
 .sidebar > .search, .sidebar > .about-link, .sidebar > .new-button { height: 40px; min-height: 40px; padding: 0 12px; }
+.sidebar > .search { gap: 10px; }
+.sidebar > .search > svg { width: 17px; height: 17px; }
 
 .saved-pill { flex-shrink: 0; padding: 2px 7px; border-radius: 2px; background: #102a43; color: #8ec8ff; font-size: 10px; font-weight: 500; animation: saved-notice 3.6s ease-in-out both; }
 @keyframes saved-notice { 0%, 100% { opacity: 0; } 8.333%, 91.667% { opacity: 1; } }
