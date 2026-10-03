@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
+import pytest
 
 import db
 import editor
@@ -107,3 +108,74 @@ async def test_different_users_have_separate_runtime_leases_and_documents(monkey
     assert create_mock.await_count == 2
     assert instances[a['name']].fs.write_text.await_count == 2
     assert instances[b['name']].fs.write_text.await_count == 1
+
+
+# @lat: [[editing#Stale runtime recovery tests]]
+async def test_old_route_is_expired_without_probing_or_stopping_live_vm(monkeypatch):
+    instance = SimpleNamespace(
+        current_session=SimpleNamespace(status=editor.sandbox.SandboxStatus.RUNNING),
+        routes=[SimpleNamespace(port=editor.PORT, url='https://new-runtime.test')],
+    )
+    monkeypatch.setattr(editor.sandbox, 'get_sandbox', AsyncMock(return_value=instance))
+    client = AsyncMock()
+    monkeypatch.setattr(editor.httpx, 'AsyncClient', client)
+    assert not await editor._alive({'name': 'shared', 'base_url': 'https://old-runtime.test/cap'})
+    client.assert_not_called()
+
+
+async def test_old_capability_is_expired_even_when_route_hostname_matches(monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(editor, 'session', api_session)
+    monkeypatch.setattr(editor, 'load_runtime', AsyncMock(return_value={'base_url': 'https://runtime.test/new-cap'}))
+    alive = AsyncMock()
+    monkeypatch.setattr(editor, '_alive', alive)
+    try:
+        await editor.check_available({'shared': True, 'name': 'shared', 'base_url': 'https://runtime.test/old-cap'})
+    except HTTPException as error:
+        assert error.status_code == 410
+    else:
+        raise AssertionError('Old capability should be expired')
+    alive.assert_not_awaited()
+
+
+async def test_current_route_server_error_remains_transient(monkeypatch):
+    from fastapi import HTTPException
+
+    instance = SimpleNamespace(
+        current_session=SimpleNamespace(status=editor.sandbox.SandboxStatus.RUNNING),
+        routes=[SimpleNamespace(port=editor.PORT, url='https://runtime.test')],
+    )
+    monkeypatch.setattr(editor.sandbox, 'get_sandbox', AsyncMock(return_value=instance))
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(editor.httpx, 'AsyncClient', lambda **kw: real_client(transport=httpx.MockTransport(lambda request: httpx.Response(503))))
+    with pytest.raises(HTTPException) as raised:
+        await editor._alive({'name': 'shared', 'base_url': 'https://runtime.test/cap'})
+    assert raised.value.status_code == 502
+
+
+async def test_stale_notebook_reopens_on_existing_runtime_without_replacement(monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(editor, 'session', api_session)
+    current = {'name': 'shared', 'base_url': 'https://new.test/cap', 'generation': editor.generation()}
+    monkeypatch.setattr(editor, 'load_runtime', AsyncMock(return_value=current))
+    with pytest.raises(HTTPException) as raised:
+        await editor.check_available({'shared': True, 'name': 'shared', 'base_url': 'https://old.test/cap'})
+    assert raised.value.status_code == 410
+    @asynccontextmanager
+    async def lease(key):
+        yield 'claim'
+    monkeypatch.setattr(editor, 'runtime_lease', lease)
+    instance = SimpleNamespace(fs=SimpleNamespace(write_text=AsyncMock()), current_session=None)
+    monkeypatch.setattr(editor.sandbox, 'get_sandbox', AsyncMock(return_value=instance))
+    monkeypatch.setattr(editor, '_alive', AsyncMock(return_value=True))
+    destroy = AsyncMock()
+    create = AsyncMock()
+    monkeypatch.setattr(editor, '_destroy_runtime', destroy)
+    monkeypatch.setattr(editor, '_start_runtime', create)
+    result = await editor.start('saved source', notebook_id='reopened', owner={'sandbox_name': 'shared'})
+    assert result['base_url'] == current['base_url']
+    instance.fs.write_text.assert_awaited_once_with(result['path'], 'saved source')
+    destroy.assert_not_awaited()
+    create.assert_not_awaited()

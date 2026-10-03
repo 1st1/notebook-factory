@@ -174,7 +174,7 @@ function App() {
   const [loading, setLoading] = useState(cached === null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
-  type SetupProgress = { stage: string; log: string; started: number; finished?: number };
+  type SetupProgress = { stage: string; log: string; started: number; finished?: number; error?: string };
   const [setups, setSetups] = useState<Record<string, SetupProgress>>({});
   const setup = selected ? setups[selected] : undefined;
   const setupStage = setup?.stage ?? "";
@@ -463,7 +463,9 @@ function App() {
       });
       await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     } catch (error) {
-      milestone(error instanceof Error ? error.message : "Editor setup failed");
+      const message = error instanceof Error ? error.message : "Editor setup failed";
+      milestone(message);
+      updateSetup(id, current => ({ ...current, error: message }));
       throw error;
     } finally {
       if (previous) closingTokens.current.delete(previous.token);
@@ -813,7 +815,7 @@ function App() {
                     });
                   }}><GitFork size={16} />Fork</button>}
                   {ownsNotebook && !activeEditor && (
-                    <button className="button primary" disabled={!!busy || setupStarted !== null} onClick={() => { void openEditor(selected!).catch(e => setError(e.message)); }}>
+                    <button className="button primary" disabled={!!busy || setupStarted !== null} onClick={() => { void openEditor(selected!).catch(() => { /* Stored with this notebook by loadEditor. */ }); }}>
                       <Pencil size={15} /> Edit notebook
                     </button>
                   )}
@@ -848,10 +850,13 @@ function App() {
               onBusy={reportChatBusy} onRename={renameNotebook} onEnterEditing={() => openEditor(id)}
             /></Suspense>)}
             </div>
-        {error && (
+        {(error || setup?.error) && (
           <div className="error" role="alert">
-            <span>{error}</span>
-            <button aria-label="Dismiss error" onClick={() => setError("")}>
+            <span>{error || setup?.error}</span>
+            <button aria-label="Dismiss error" onClick={() => {
+              if (error) setError("");
+              else if (selected) updateSetup(selected, current => ({ ...current, error: undefined }));
+            }}>
               <X size={16} />
             </button>
           </div>
@@ -889,7 +894,7 @@ function App() {
                 setInitialPrompt("");
                 if (prompt) {
                   setQueuedPrompts(items => ({ ...items, [item.id]: prompt }));
-                  void openEditor(item.id).catch(e => setError(e instanceof Error ? e.message : "Could not start the editor."));
+                  void openEditor(item.id).catch(() => { /* Stored with this notebook by loadEditor. */ });
                 }
               });
             }}

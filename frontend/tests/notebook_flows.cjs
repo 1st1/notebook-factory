@@ -5,6 +5,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 let holdClose=false,holdStart=false,heldStart,closeSource,starts=[],expiredIds=new Set(),saves=[],boots={},histories=new Map(),messagesSeen=[];
 let authProfile={login:'1st1',user_id:1};
 let releaseBackground;
+const startFailureIds=new Set();
 let holdHistory=true;const historyWaiters=[];
 const notebooks=['one','two','three'].map(id=>({id,title:'Notebook '+id,owner_id:1,revision:1,updated_at:1}));
 notebooks.push({id:'other',title:'Other notebook',owner_id:2,revision:1,updated_at:1});
@@ -21,7 +22,7 @@ const server=http.createServer(async(req,res)=>{
  if(u.pathname==='/api/notebooks')return res.end(JSON.stringify(notebooks));
  if(u.pathname==='/api/auth/me')return res.end(JSON.stringify({can_edit:true,user:authProfile,configured:true}));
  if(u.pathname.endsWith('/chat-history')){const v=histories.get(id)||{messages:[],revision:0};if(req.method==='PUT'){histories.set(id,{messages:body.messages,revision:body.revision+1});return res.end(JSON.stringify({revision:body.revision+1}));}if(holdHistory){historyWaiters.push(()=>res.end(JSON.stringify(v)));return;}return res.end(JSON.stringify(v));}
- if(u.pathname.endsWith('/editor')){starts.push(id);const send=()=>res.end('data: '+JSON.stringify({type:'ready',editor:{name:'test',token:id+'-'+starts.length,url:'http://127.0.0.1:5187/editor-frame?id='+id}})+'\n\n');if(holdStart){res.write('data: '+JSON.stringify({type:'progress',message:'Preparing test environment…'})+'\n\n');res.write('data: '+JSON.stringify({type:'log',message:'Retained setup log'})+'\n\n');heldStart=send;return;}return send();}
+ if(u.pathname.endsWith('/editor')){starts.push(id);const send=()=>res.end('data: '+JSON.stringify(startFailureIds.has(id)?{type:'error',message:'Test startup unavailable'}:{type:'ready',editor:{name:'test',token:id+'-'+starts.length,url:'http://127.0.0.1:5187/editor-frame?id='+id}})+'\n\n');if(holdStart){res.write('data: '+JSON.stringify({type:'progress',message:'Preparing test environment…'})+'\n\n');res.write('data: '+JSON.stringify({type:'log',message:'Retained setup log'})+'\n\n');heldStart=send;return;}return send();}
  if(u.pathname.endsWith('/editor-status')){res.statusCode=expiredIds.has(id)?410:200;return res.end('{}');}
  if(u.pathname.endsWith('/save')){saves.push({id,...body});return res.end('{}');}
  if(u.pathname.endsWith('/close')){closeSource=body.source;if(holdClose)return;return res.end('{}');}
@@ -176,6 +177,22 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  await page.getByLabel('Notebook title').press('Control+Enter');
  await page.getByRole('heading',{name:'Blank notebook',exact:true}).waitFor();
  assert.equal(starts.length,beforeBlankStarts,'blank prompt does not start editor');
+ const blank=notebooks.find(n=>n.title==='Blank notebook');
+ holdStart=true;heldStart=undefined;startFailureIds.add(blank.id);
+ await page.getByRole('button',{name:'Edit notebook',exact:true}).click();
+ for(let i=0;i<30&&!heldStart;i++)await tick();assert(heldStart);
+ await page.getByRole('button',{name:/^Notebook one/}).click();
+ holdStart=false;heldStart();
+ const blankButton=page.getByRole('button',{name:/^Blank notebook/});
+ await blankButton.getByLabel('Editor starting').waitFor({state:'detached'});
+ assert.equal(await page.getByRole('alert').filter({hasText:'Test startup unavailable'}).count(),0,'background failure stays with its notebook');
+ await blankButton.click();
+ await page.getByRole('alert').filter({hasText:'Test startup unavailable'}).waitFor();
+ startFailureIds.delete(blank.id);
+ await page.getByRole('button',{name:'Edit notebook',exact:true}).click();
+ await blankButton.getByLabel('Editor connected').waitFor();
+ assert.equal(await page.getByRole('alert').filter({hasText:'Test startup unavailable'}).count(),0,'retry clears previous startup error');
+
  authProfile={login:'amy',user_id:2};
  const amyPage=await browser.newPage();await amyPage.goto('http://127.0.0.1:5187/?notebook=other');
  await amyPage.getByRole('textbox',{name:'Message'}).waitFor();

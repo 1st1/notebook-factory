@@ -6,7 +6,7 @@ import os
 import secrets
 import time
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import anyio
 import httpx
@@ -192,6 +192,10 @@ async def _alive(current):
         raise
     if not instance.current_session or instance.current_session.status != sandbox.SandboxStatus.RUNNING:
         return False
+    # Stable Sandbox names survive VM replacement; their public routes do not.
+    route = next((route for route in instance.routes if route.port == PORT), None)
+    if route and urlsplit(route.url).netloc != urlsplit(current["base_url"]).netloc:
+        return False
     async with httpx.AsyncClient(timeout=5) as client:
         try:
             response = await client.get(current["base_url"] + "/api/status")
@@ -252,6 +256,10 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
 async def check_available(editor):
     async with session():
         current = {**editor, "base_url": editor.get("base_url") or editor["url"].split("/doc/tree/", 1)[0]}
+        if editor.get("shared"):
+            registered = await load_runtime(editor["name"])
+            if registered and registered.get("base_url") and registered["base_url"] != current["base_url"]:
+                raise HTTPException(410, "Editor belongs to a replaced runtime. Reopen the saved draft.")
         if not await _alive(current):
             raise HTTPException(410, "Editor expired. Reopen the saved draft.")
 

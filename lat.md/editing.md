@@ -4,7 +4,7 @@ A notebook's durable document lives in Postgres. JupyterLab provides temporary e
 
 ## Provisioning
 
-[[backend/main.py#provision_editor]] reuses a reachable editor or creates a replacement from the durable draft. Transient provider failures preserve the existing session instead of silently replacing it.
+[[backend/main.py#provision_editor]] reuses a reachable editor or creates a replacement from the durable draft. Expired routes and capabilities are recovered from the saved draft; genuine transient provider failures preserve the existing session instead of silently replacing it.
 
 [[backend/editor.py#start]] connects notebooks to one VM and Jupyter server per user within an app origin. [[backend/runtime_registry.py#runtime_lease]] serializes creation across serverless requests through a database lease. Concurrent opens reuse the same runtime; each editing session gets a unique document path and bridge token, and each notebook has its own Python kernel. Only that user’s kernels share installed packages and a writable filesystem. Other users receive different VMs, capability URLs, writable drives, and database runtime leases. The prepared dependency drive remains read-only and shared.
 
@@ -200,3 +200,11 @@ The bridge reports document readiness separately from kernel connectivity. A loa
 The editor starts with JupyterLab Dark and shared neutral surface overrides. Matplotlib defaults to dark figures and axes with light labels, ticks, and a contrasting series palette.
 
 [[backend/assets/jupyter_launcher.py]] writes the bundled [Matplotlib configuration](../backend/assets/matplotlibrc) after dependency restoration and before launching Jupyter. This updates both new and cached workspaces without importing Matplotlib at startup or rebuilding the dependency drive. DejaVu Sans and Noto fallback fonts remain configured. Users can override plot styles explicitly; saved plot images need rerunning to change their appearance. The agent preserves dark defaults and uses Plotly's dark template when generating charts.
+
+## Stale runtime recovery tests
+
+A stable Sandbox name must not make an old notebook endpoint appear current after VM replacement. Obsolete editor routes and capabilities expire safely; real server failures stay transient.
+
+Availability checks compare the notebook capability with the runtime registry and the current VM's public route before requesting Jupyter status. A mismatch returns expiry so provisioning can reopen the saved draft on the current shared runtime without destroying another notebook's kernel. Regression tests cover route changes, capability changes on the same host, warm reuse, and current-route server errors.
+
+Startup errors live with their notebook's progress state. Switching notebooks during startup never displays that error on the newly selected notebook. Returning shows the failure and permits retry; retry clears the old error. Browser regression holds startup open, switches away, fails it, and verifies scoped error display and successful retry.
