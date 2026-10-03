@@ -1,7 +1,8 @@
 import { About } from "./About";
+import { Chat } from "./Chat";
 import notebookTheme from "../../backend/assets/notebook_theme.css?raw";
 import notebookDarkTheme from "../../backend/templates/lab/static/theme-dark.css?raw";
-import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ArrowUpRight,
@@ -21,7 +22,6 @@ import {
   X,
 } from "lucide-react";
 import "./style.css";
-const Chat = lazy(() => import("./Chat").then(module => ({ default: module.Chat })));
 
 type Notebook = {
   id: string;
@@ -861,7 +861,7 @@ function App() {
               />}
             </div>
             {notebook && !authLoaded && <ChatLoading open={chatOpen} onClose={() => setChatOpen(false)} />}
-            {authLoaded && chatIds.map(id => <Suspense key={id} fallback={<ChatLoading open={!about && selected === id && chatOpen} onClose={() => setChatPanel({ id, open: false })} />}><Chat
+            {authLoaded && chatIds.map(id => <Chat key={id}
               initialPrompt={queuedPrompts[id]} onInitialPromptSent={consumeInitialPrompt}
               username={workspaceUsers.find(user => user.id === notebooks.find(n => n.id === id)?.owner_id)?.login || "User"}
               model={auth.chat_model} notebookId={id} editorStarting={startingIds.has(id)} readOnly={!auth.user || notebooks.find(n => n.id === id)?.owner_id !== auth.user.user_id}
@@ -870,7 +870,7 @@ function App() {
               disabled={selected === id && !!busy} open={!about && selected === id && chatOpen}
               onClose={() => setChatPanel({ id, open: false })} onTurnFinished={saveAfterTurn}
               onBusy={reportChatBusy} onRename={renameNotebook} onEnterEditing={() => openEditor(id)}
-            /></Suspense>)}
+            />)}
             </div>
         {(error || setup?.error) && (
           <div className="error" role="alert">
