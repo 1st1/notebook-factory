@@ -633,6 +633,13 @@ function App() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </label>
+          <a className="about-link" href="/about" aria-current={about ? "page" : undefined} onClick={event => {
+            if (event.metaKey || event.ctrlKey) return;
+            event.preventDefault();
+            if (editor?.ready) void saveEditor(editor).catch(() => setError("Could not save the notebook draft; autosave will retry."));
+            if (!about) history.pushState({}, "", "/about");
+            setAbout(true); setMobile(false);
+          }}>How it’s built <ArrowUpRight size={13} /></a>
         <button
           className="new-button"
           disabled={!!busy || (!!auth.user && !auth.can_edit)}
@@ -671,13 +678,7 @@ function App() {
 
         </nav>
         <div className="sidebar-bottom">
-          <a className="about-link" href="/about" aria-current={about ? "page" : undefined} onClick={event => {
-            if (event.metaKey || event.ctrlKey) return;
-            event.preventDefault();
-            if (editor?.ready) void saveEditor(editor).catch(() => setError("Could not save the notebook draft; autosave will retry."));
-            if (!about) history.pushState({}, "", "/about");
-            setAbout(true); setMobile(false);
-          }}>About this project <ArrowUpRight size={13} /></a>
+
           {auth.user ? (
             <div className="account">
               <span className="avatar" aria-hidden="true">

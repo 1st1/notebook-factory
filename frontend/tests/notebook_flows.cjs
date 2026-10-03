@@ -110,7 +110,7 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  const savesBeforeBlur=saves.length;await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await page.waitForTimeout(700);assert(saves.length>savesBeforeBlur,'switching browser focus triggers database save');
  await aButton.click();await page.getByText('Editor is ready.',{exact:true}).waitFor();assert.equal(await aButton.getByLabel('Agent working').count(),0);assert.equal(await aButton.getByLabel('Editor connected').count(),1);
  // @lat: [[architecture#About page]]
- await page.getByRole('link',{name:'About this project'}).click();
+ await page.getByRole('link',{name:'How it’s built'}).click();
  await page.getByRole('heading',{name:'How it works'}).waitFor();
  assert.equal(new URL(page.url()).pathname,'/about');
  assert.equal(await page.locator('.about-component').count(),10);

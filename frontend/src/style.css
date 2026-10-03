@@ -83,13 +83,14 @@ svg {
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   background: var(--surface);
-  padding: 32px 20px 16px;
+  padding: 13px 20px 16px;
   display: flex;
   flex-direction: column;
   position: fixed;
   inset: 0 auto 0 0;
 }
 .brand-row {
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -147,7 +148,7 @@ svg {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  margin: 28px 0 14px;
+  margin: 12px 0 8px;
   padding: 10px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -705,8 +706,8 @@ main > .progress { flex-shrink: 0; }
   .notebook-heading { padding-top: 10px; padding-bottom: 12px; }
   .title-row { flex-direction: row; align-items: center; margin: 0 0 8px; gap: 12px; }
   h1 { font-size: 24px; }
-  .sidebar { padding-top: 16px; padding-bottom: 8px; }
-  .search { margin-top: 16px; }
+  .sidebar { padding-top: 13px; padding-bottom: 8px; }
+  .search { margin-top: 12px; }
   .search { padding-top: 12px; padding-bottom: 12px; }
   .sidebar-bottom { padding-top: 8px; }
 }
@@ -867,8 +868,8 @@ button:focus-visible, a:focus-visible, input:focus-visible:not(.search input), t
 iframe { color-scheme: dark; }
 
 /* About: a compact architecture tour, with the same dark workspace surfaces. */
-.about-link { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 11px; padding: 10px 0; margin-bottom: 10px; }
-.about-link:hover, .about-link[aria-current="page"] { color: var(--foreground); }
+.about-link { display: flex; justify-content: space-between; align-items: center; color: var(--foreground); font-size: 12px; padding: 10px 12px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 2px; }
+.about-link:hover, .about-link[aria-current="page"] { background: #171717; border-color: #666; }
 .about-page { overflow: auto; overscroll-behavior: contain; flex: 1; min-height: 0; padding: 24px; }
 .about-content { max-width: 860px; margin: 0 auto; }
 .about-nav { display: flex; justify-content: space-between; align-items: center; padding: 0; margin-bottom: 28px; }
