@@ -827,7 +827,7 @@ function App() {
                       }}
                     ><Trash2 size={16} strokeWidth={1.5} /></button>
                   )}
-                  <button className="button" aria-expanded={chatOpen} onClick={() => setChatOpen(!chatOpen)}><MessageSquare size={16}/>Chat</button>
+                  {!chatOpen && <button className="button" aria-expanded={false} onClick={() => setChatOpen(true)}><MessageSquare size={16}/>Chat</button>}
                   {notebook && !ownsNotebook && <button className="button primary" disabled={!!busy} onClick={() => {
                     if (!auth.user) { location.assign("/api/auth/login"); return; }
                     void action("Forking notebook…", async () => {

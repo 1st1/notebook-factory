@@ -110,7 +110,7 @@ svg {
 }
 .brand-icon { width: 22px; height: 22px; flex-shrink: 0; color: var(--foreground); }
 .new-button {
-  margin: 0 0 18px;
+  margin: 0 0 30px;
   border: 1px solid var(--border);
   background: var(--background);
   color: var(--foreground);
@@ -129,7 +129,7 @@ svg {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  margin: 12px 0 8px;
+  margin: 30px 0 8px;
   padding: 10px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -688,7 +688,7 @@ main > .progress { flex-shrink: 0; }
   .title-row { flex-direction: row; align-items: center; margin: 0 0 8px; gap: 12px; }
   h1 { font-size: 24px; }
   .sidebar { padding-top: 13px; padding-bottom: 8px; }
-  .search { margin-top: 12px; }
+  .search { margin-top: 30px; }
   .search { padding-top: 12px; padding-bottom: 12px; }
   .sidebar-bottom { padding-top: 8px; }
 }
@@ -830,8 +830,8 @@ main { padding-top: 12px; }
 .sidebar, .surface-toolbar { background: var(--surface); }
 .button:hover, .owner-toggle:hover, .notebook-link:hover { background: var(--hover); }
 .notebook-link.active, .chat-message.user { background: var(--active); color: var(--foreground); }
-.button.primary, .new-button { background: var(--foreground); border-color: var(--foreground); color: var(--background); }
-.button.primary:hover, .new-button:hover { background: #ccc; border-color: #ccc; }
+.button.primary, .new-button { background: #ccc; border-color: #ccc; color: var(--background); }
+.button.primary:hover, .new-button:hover { background: #ddd; border-color: #ddd; }
 .green-dot, .running-editor-dot, .agent-working-dots i { background: var(--success); }
 .gray-dot { background: #666; }
 .button.delete-notebook { color: var(--danger); border-color: #763136; }
@@ -866,3 +866,5 @@ iframe { color-scheme: dark; }
 .about-component dt { font-weight: 500; }
 .about-component dd { margin: 0; color: var(--muted); }
 @media (max-width: 650px) { .about-page { padding: 16px; } .about-component { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+
+.sidebar > .search, .sidebar > .about-link, .sidebar > .new-button { height: 40px; min-height: 40px; padding: 0 12px; }
