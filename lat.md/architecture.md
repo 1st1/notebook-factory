@@ -121,7 +121,7 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 
 Published iframes stay hidden behind a dark loading surface until their load event, preventing a white flash during navigation.
 
-Published HTML uses the JupyterLab dark palette with shared notebook surface overrides. Read-only spacing is 12px on desktop and 6px at mobile widths, with a compact prompt gutter and no empty Markdown prompt gutter. The shared published-layout stylesheet also applies to previously cached HTML. The browser and fallback endpoint also theme older cached HTML without rerunning cells; existing plot images retain their saved colors.
+Published HTML uses the JupyterLab dark palette with shared notebook surface overrides. Read-only spacing is 12px on desktop and 6px at mobile widths, with a compact prompt gutter and no empty Markdown prompt gutter. On mobile, long code snippets and preformatted text scroll horizontally within their own blocks rather than wrapping or widening the page. The shared published-layout stylesheet also applies to previously cached HTML. The browser and fallback endpoint also theme older cached HTML without rerunning cells; existing plot images retain their saved colors.
 
 Lab and base templates are bundled in [backend/templates](https://github.com/vercel-labs/notebook-factory/tree/main/backend/templates), with explicit template search paths. Functions cannot rely on system-installed Jupyter data directories. Public downloads also return `published`, even for the signed-in owner.
 

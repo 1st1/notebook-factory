@@ -6,4 +6,14 @@ main { max-width: none; margin: 0; padding: 12px !important; }
 @media (max-width: 650px) {
   main { padding: 6px !important; }
   :root { --jp-cell-prompt-width: 28px; }
+  .jp-InputArea-editor, .jp-RenderedHTMLCommon { min-width: 0; }
+  .jp-InputArea-editor .highlight pre,
+  .jp-RenderedHTMLCommon pre,
+  .jp-RenderedText pre {
+    white-space: pre;
+    overflow-wrap: normal;
+    word-break: normal;
+    overflow-x: auto;
+    max-width: 100%;
+  }
 }
