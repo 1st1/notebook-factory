@@ -880,3 +880,7 @@ iframe { color-scheme: dark; }
 @media (max-width: 650px) { .about-page { padding: 16px; } .about-component { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
 
 .sidebar > .search, .sidebar > .about-link, .sidebar > .new-button { height: 40px; min-height: 40px; padding: 0 12px; }
+
+.saved-pill { flex-shrink: 0; padding: 2px 7px; border-radius: 2px; background: #102a43; color: #8ec8ff; font-size: 10px; font-weight: 500; animation: saved-notice 3.6s ease-in-out both; }
+@keyframes saved-notice { 0%, 100% { opacity: 0; } 8.333%, 91.667% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .saved-pill { animation: none; } }

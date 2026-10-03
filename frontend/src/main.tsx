@@ -250,20 +250,23 @@ function App() {
   const closingTokens = useRef(new Set<string>());
   const frames = useRef(new Map<string, HTMLIFrameElement>());
   const [saved, setSaved] = useState("");
+  const [saveNotice, setSaveNotice] = useState<{ id: string; at: number } | null>(null);
+  useEffect(() => {
+    if (!saveNotice) return;
+    const timer = setTimeout(() => setSaveNotice(null), 3600);
+    return () => clearTimeout(timer);
+  }, [saveNotice]);
   const [mobile, setMobile] = useState(false);
   const [renderVersion, setRenderVersion] = useState(0);
   const activeEditor = editor?.connected ? editor : null;
   const editorReady = !!activeEditor?.ready;
   const notebook = notebooks.find((n) => n.id === selected);
   useEffect(() => {
-    if (setupStarted === null && !editorReady) return;
+    if (setupStarted === null) return;
     const timer = setInterval(() => tickSetup(value => value + 1), 1000);
     return () => clearInterval(timer);
-  }, [setupStarted, editorReady]);
-  const savedSeconds = Math.max(0, Math.floor(Date.now() / 1000 - (notebook?.updated_at ?? Date.now() / 1000)));
-  const savedUnit = savedSeconds < 60 ? "second" : savedSeconds < 3600 ? "minute" : "hour";
-  const savedAmount = Math.floor(savedSeconds / (savedSeconds < 60 ? 1 : savedSeconds < 3600 ? 60 : 3600));
-  const lastSaved = `Last saved ${savedAmount} ${savedUnit}${savedAmount === 1 ? "" : "s"} ago`;
+  }, [setupStarted]);
+
 
   const ownsNotebook = !!notebook && !!auth.user && notebook.owner_id === auth.user.user_id;
   const workspaceUsers = auth.user
@@ -414,9 +417,12 @@ function App() {
             try { sessionStorage.setItem(WORKSPACE_CACHE, JSON.stringify({ saved: Date.now(), notebooks: updated })); } catch { /* Storage is optional. */ }
             return updated;
           });
-          if (selectedRef.current === current.notebookId) setRenderVersion(value => value + 1);
+          if (selectedRef.current === current.notebookId) {
+            setRenderVersion(value => value + 1);
+            setSaveNotice({ id: current.notebookId, at: Date.now() });
+            setSaved("Saved at " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+          }
         }
-        if (selectedRef.current === current.notebookId) setSaved("Saved at " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
       } while (saveAgain.current.has(current.token));
     })().catch(error => {
       if (closingTokens.current.has(current.token) || editorsRef.current[current.notebookId]?.token !== current.token) return;
@@ -591,7 +597,7 @@ function App() {
     setChatPanel({ id, open: !window.matchMedia("(max-width: 650px)").matches });
     if (editor?.ready) void saveEditor(editor).catch(() => setError("A notebook draft could not be saved. Keep this tab open; autosave will retry."));
     selectedRef.current = id;
-    setSelected(id); setMobile(false); setError(""); setSaved("");
+    setSaveNotice(null); setSelected(id); setMobile(false); setError(""); setSaved("");
   }
   const date = notebook
     ? new Date(notebook.updated_at * 1000).toLocaleDateString(undefined, {
@@ -792,14 +798,15 @@ function App() {
                     aria-label={selected && startingIds.has(selected) ? "Editor starting" : editorReady ? "Editor connected" : "Read-only notebook"}
                   />
                   <h1>{notebook?.title}</h1>
-                  {(editorReady || setupStage || setupLog) && <button
-                    className="setup-status" aria-label={editorReady ? "Last save status" : "Editor startup status"} aria-expanded={setupPanelOpen}
+                  {editorReady && saveNotice?.id === selected && <span key={saveNotice.at} className="saved-pill" role="status">Saved</span>}
+                  {!editorReady && (setupStage || setupLog) && <button
+                    className="setup-status" aria-label="Editor startup status" aria-expanded={setupPanelOpen}
                     aria-controls="startup-events-panel"
-                    title={editorReady ? `Saved ${new Date((notebook?.updated_at ?? 0) * 1000).toLocaleString()} · View startup events` : `${setupStage} · ${setupSeconds}s elapsed`}
+                    title={`${setupStage} · ${setupSeconds}s elapsed`}
                     onClick={() => selected && setSetupPanels(items => ({ ...items, [selected]: !setupPanelOpen }))}
                   >
                     {!editorReady && setupStarted !== null && <LoaderCircle size={12} className="spin" aria-hidden="true" />}
-                    <span role="status">{editorReady ? lastSaved : setupStage}</span>
+                    <span role="status">{setupStage}</span>
                     {!editorReady && <small>{setupSeconds}s</small>}
                   </button>}
 
