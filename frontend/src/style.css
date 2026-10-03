@@ -157,6 +157,9 @@ nav {
   overflow: auto;
   flex: 1;
 }
+/* Keep scrolling from reserving width beside the full-width user rows. */
+.sidebar > nav { scrollbar-width: none; }
+.sidebar > nav::-webkit-scrollbar { display: none; }
 .notebook-link {
   width: 100%;
   display: flex;
