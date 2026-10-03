@@ -10,12 +10,13 @@ CONTENT_POLICY = "default-src 'none'; base-uri 'none'; form-action 'none'; scrip
 
 
 def themed_html(html: str):
+    layout = (Path(__file__).parent / "assets/published_notebook.css").read_text()
     if 'id="notebook-factory-theme"' in html:
-        return html
+        return html.replace("</head>", "<style>" + layout + "</style></head>", 1)
     root = Path(__file__).parent
     css = (root / "templates/lab/static/theme-dark.css").read_text()
     css += (root / "assets/notebook_theme.css").read_text()
-    css += "main{max-width:none;margin:0;padding:24px!important}.jp-Notebook{padding:0!important}"
+    css += layout
     return html.replace("</head>", '<style id="notebook-factory-theme">' + css + "</style></head>", 1)
 
 

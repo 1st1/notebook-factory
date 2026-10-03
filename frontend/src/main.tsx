@@ -1,5 +1,6 @@
 import { About } from "./About";
 import { Chat } from "./Chat";
+import publishedNotebookLayout from "../../backend/assets/published_notebook.css?raw";
 import notebookTheme from "../../backend/assets/notebook_theme.css?raw";
 import notebookDarkTheme from "../../backend/templates/lab/static/theme-dark.css?raw";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -116,7 +117,8 @@ function PublishedNotebook({ notebook, version }: { notebook: Notebook; version:
         if (!response.ok) throw new Error("Notebook unavailable");
         return response.text();
       })
-      .then(value => setHtml(value.includes('id="notebook-factory-theme"') ? value : value.replace("</head>", `<style id="notebook-factory-theme">${notebookDarkTheme}\n${notebookTheme}\nmain{max-width:none;margin:0;padding:24px!important}.jp-Notebook{padding:0!important}</style></head>`)))
+      .then(value => value.replace("</head>", `<style>${publishedNotebookLayout}</style></head>`))
+      .then(value => setHtml(value.includes('id="notebook-factory-theme"') ? value : value.replace("</head>", `<style id="notebook-factory-theme">${notebookDarkTheme}\n${notebookTheme}\n${publishedNotebookLayout}</style></head>`)))
       .catch(error => { if (error.name !== "AbortError") setFailed(true); });
     return () => controller.abort();
   }, [notebook.render_url]);

@@ -1,0 +1,9 @@
+/* Read-only layout; also applied when loading previously published HTML. */
+main { max-width: none; margin: 0; padding: 12px !important; }
+.jp-Notebook { padding: 0 !important; }
+:root { --jp-cell-prompt-width: 40px; }
+.jp-MarkdownCell .jp-InputPrompt { display: none; }
+@media (max-width: 650px) {
+  main { padding: 6px !important; }
+  :root { --jp-cell-prompt-width: 28px; }
+}
