@@ -788,7 +788,7 @@ function App() {
                 </button>
                 <div className="notebook-panel-title" title={activeEditor ? saved || "Changes save automatically" : `Updated ${date} · Revision ${notebook?.revision}`}>
                   <span
-                    className={(selected && startingIds.has(selected)) || editorReady ? "green-dot starting-editor-dot" : "gray-dot"}
+                    className={selected && startingIds.has(selected) ? "green-dot starting-editor-dot" : editorReady ? "green-dot" : "gray-dot"}
                     aria-label={selected && startingIds.has(selected) ? "Editor starting" : editorReady ? "Editor connected" : "Read-only notebook"}
                   />
                   <h1>{notebook?.title}</h1>
