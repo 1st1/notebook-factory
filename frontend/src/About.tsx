@@ -1,10 +1,12 @@
+import { Fragment } from "react";
 import { BookOpen, Github } from "lucide-react";
 
 const source = "https://github.com/vercel-labs/notebook-factory";
-const components = [
+const components: { name: string; url: string; text: string; links?: { name: string; url: string }[] }[] = [
   { name: "Supabase", url: "https://supabase.com/", text: "Postgres stores users, notebook documents and outputs, published revisions, chat history, and editor sessions. It also powers full-text search across notebook titles and content." },
-  { name: "Vercel CDN + Vite", url: "https://vercel.com/docs/cdn", text: "Vite builds the React frontend into static assets; Vercel CDN serves them." },
-  { name: "Vercel + FastAPI", url: "https://vercel.com/docs/frameworks/backend/fastapi", text: "Runs FastAPI on Vercel Fluid Serverless platform." },
+  { name: "Vercel CDN + Vite", url: "https://vercel.com/docs/cdn", links: [{ name: "Vercel CDN", url: "https://vercel.com/docs/cdn" }, { name: "Vite", url: "https://vite.dev/" }], text: "Vite builds the React frontend into static assets; Vercel CDN serves them." },
+  { name: "Vercel + FastAPI", url: "https://vercel.com/docs/frameworks/backend/fastapi", links: [{ name: "Vercel", url: "https://vercel.com/docs/frameworks/backend/fastapi" }, { name: "FastAPI", url: "https://fastapi.tiangolo.com/" }], text: "Runs FastAPI on Vercel Fluid Serverless platform." },
+  { name: "Vercel Services", url: "https://vercel.com/docs/services", text: "Deploys the FastAPI backend and Vite frontend together in one project, with shared routing under one domain." },
   { name: "Vercel Blob", url: "https://vercel.com/docs/vercel-blob", text: "Stores rendered notebook HTML and prepared font assets. Published notebooks can be read without starting a kernel." },
   { name: "Vercel AI Gateway", url: "https://vercel.com/docs/ai-gateway", text: "Routes model requests from the backend, authenticated with the deployment's Vercel identity." },
   { name: "Vercel Python AI SDK", url: "https://github.com/vercel-labs/ai-python", text: "Runs the agent's model and tool loop, streaming responses to the browser. Tools read, edit, and execute notebook cells." },
@@ -25,8 +27,10 @@ export function About({ onBack }: { onBack: () => void }) {
       <a className="about-source button" href={source} target="_blank" rel="noopener noreferrer"><Github size={16} aria-hidden="true" />View source on GitHub</a>
       <a className="about-source button" href="/lat/"><BookOpen size={16} aria-hidden="true" />See lat.md project docs</a>
       <dl className="about-stack" aria-label="Technology stack">
-        {components.map(({ name, url, text }) => <div className="about-component" key={name}>
-          <dt><a href={url} target="_blank" rel="noopener noreferrer" aria-label={name}>{name.replaceAll("Vercel", "▲")}</a></dt>
+        {components.map(({ name, url, text, links }) => <div className="about-component" key={name}>
+          <dt>{(links ?? [{ name, url }]).map((link, index) => <Fragment key={link.name}>
+            {index > 0 && " + "}<a href={link.url} target="_blank" rel="noopener noreferrer" aria-label={link.name}>{link.name.replaceAll("Vercel", "▲")}</a>
+          </Fragment>)}</dt>
           <dd>{text.replaceAll("Vercel", "▲")}</dd>
         </div>)}
       </dl>

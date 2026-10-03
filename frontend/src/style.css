@@ -868,6 +868,8 @@ iframe { color-scheme: dark; }
 .about-stack { margin: 0; }
 .about-component { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 20px; padding: 14px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.6; }
 .about-component dt { font-weight: 500; }
+.about-component dt a { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--muted); }
+.about-component dt a:hover { text-decoration-color: currentColor; }
 .about-component dd { margin: 0; color: var(--muted); }
 @media (max-width: 650px) { .about-page { padding: 16px; } .about-component { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
 
