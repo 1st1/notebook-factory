@@ -1,6 +1,6 @@
 # Deployment and operation
 
-The app deploys from the repository root as two Vercel Services, with Neon Postgres for persistence and Vercel Sandbox for notebook execution.
+The app deploys from the repository root as two Vercel Services, with Supabase Postgres for persistence and Vercel Sandbox for notebook execution.
 
 ## Production project
 
@@ -13,7 +13,7 @@ The configured production application is [notebooks.playground-vercel.tools](htt
 | Vercel project | `notebook-factory` |
 | Project ID | `prj_46j0HKfLl1LIgBGdDMaXXEpTUpFh` |
 | Team ID | `team_TtmJZYmD3tcLBLqWOhoVawd1` |
-| Database | Connected Neon Marketplace integration |
+| Database | Connected Supabase Marketplace integration |
 | User enrollment | Any Vercel account, up to 300 admitted users |
 
 These are the project details verified from the new project linkage on October 2, 2026. Local linkage lives in the ignored `.vercel/project.json`. Production has been deployed directly from the working tree with the CLI; a successful deployment does not imply those changes have been committed or pushed.
@@ -31,7 +31,7 @@ The production alias is public. Unique deployment URLs have Vercel deployment pr
 | `APP_URL` | Canonical app origin; production uses `https://notebooks.playground-vercel.tools` |
 | `BLOB_READ_WRITE_TOKEN` | Backend upload credential for the public rendered-notebook Blob store |
 | `SESSION_SECRET` | Random signing secret, at least 32 characters in deployment |
-| `DATABASE_URL` | Neon/Postgres connection URL with TLS options |
+| `DATABASE_URL` / `POSTGRES_URL` | Postgres connection URL; explicit DATABASE_URL takes precedence over the Supabase integration alias |
 | `VERCEL_APP_CLIENT_ID` | OAuth application client ID |
 | `VERCEL_APP_CLIENT_SECRET` | OAuth application secret |
 | `VERCEL_OIDC_TOKEN` | Request-scoped Sandbox identity in deployment, or an explicitly loaded local token |
@@ -43,7 +43,7 @@ Register the canonical APP_URL plus `/api/auth/callback` as the Sign in with Ver
 
 The backend loads `backend/.env`; it does not automatically load a root `.env.local` produced by CLI environment commands. Load or export that file explicitly when using its credentials locally. Never put backend secrets in `VITE_*` variables, which are client-visible.
 
-Marketplace connection supplies the database variables. The application reads DATABASE_URL, not the other provider-specific aliases. Required environment changes take effect in a new deployment. Startup creates the schema in a fresh database. It does not migrate the old GitHub schema; use a new DATABASE_URL. Future schema changes need an explicit migration strategy.
+Marketplace connection supplies the database variables. The application reads DATABASE_URL, falling back to the Supabase integration’s POSTGRES_URL. Supabase transaction-pooler URLs use the same host on session-mode port 5432 because SQLAlchemy asyncpg uses prepared statements; the backend keeps a small connection pool. Required environment changes take effect in a new deployment. Startup creates the schema in a fresh database. It does not migrate the old GitHub schema; use a new DATABASE_URL. Future schema changes need an explicit migration strategy.
 
 ## Local development
 
@@ -147,4 +147,4 @@ This implementation requires a fresh database and a Sign in with Vercel applicat
 
 In the target team's Settings → Apps, create an app with Sign-In Access set to **Anyone with a Vercel account**. Enable openid/profile scopes, select client_secret_post authentication, and register the exact APP_URL plus `/api/auth/callback`. Store the client ID and secret in VERCEL_APP_CLIENT_ID and VERCEL_APP_CLIENT_SECRET. Local development can register `http://localhost:5173/api/auth/callback` as well. See [Vercel app configuration](https://vercel.com/docs/sign-in-with-vercel/manage-from-dashboard).
 
-Use a new Neon database and SESSION_SECRET for the new deployment. No old accounts, notebooks, or GitHub sessions are imported. Startup creates empty tables, enrollment admits the first 300 users, and the database independently caps users at 500. Runtime names and writable drives are user-scoped. Saved notebooks and chats remain publicly readable; mutations require ownership. Deploy frontend and backend together. This application login is separate from Vercel deployment protection.
+Use a new Supabase database and SESSION_SECRET for the new deployment. No old accounts, notebooks, or GitHub sessions are imported. Startup creates empty tables, enrollment admits the first 300 users, and the database independently caps users at 500. Runtime names and writable drives are user-scoped. Saved notebooks and chats remain publicly readable; mutations require ownership. Deploy frontend and backend together. This application login is separate from Vercel deployment protection.

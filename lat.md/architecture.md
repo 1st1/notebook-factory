@@ -4,7 +4,7 @@ A public Python notebook library with Vercel sign-in, per-user ownership, read-o
 
 ## Overall architecture on Vercel
 
-Vercel hosts the web and API services, isolates Python execution in Sandbox, serves published artifacts through Blob, and routes model requests through AI Gateway. Neon Postgres holds durable application state.
+Vercel hosts the web and API services, isolates Python execution in Sandbox, serves published artifacts through Blob, and routes model requests through AI Gateway. Supabase Postgres holds durable application state.
 
 The application and publication path uses two services in one Vercel deployment. API calls share the app origin; published HTML is fetched directly from Blob. Vercel OIDC enrolls users through the API; each notebook has one owner.
 
@@ -17,14 +17,14 @@ flowchart TB
     end
     browser -->|"app assets"| web
     browser <-->|"/api requests"| api
-    api <-->|"durable state"| neon[("Neon Postgres")]
+    api <-->|"durable state"| supabase[("Supabase Postgres")]
     api -->|"publish HTML"| blob["Vercel Blob"]
     api <-->|"chat stream"| gateway["AI Gateway"]
     gateway <--> model["Model provider"]
     blob -->|"public HTML"| viewer["Browser viewer"]
 ```
 
-Browser and Browser viewer represent the same client, drawn separately to keep the publication path compact. Neon is connected through Vercel Marketplace. The viewer isolates HTML in a sandboxed iframe; reading a publication never starts a Python kernel.
+Browser and Browser viewer represent the same client, drawn separately to keep the publication path compact. Supabase is connected through Vercel Marketplace. The viewer isolates HTML in a sandboxed iframe; reading a publication never starts a Python kernel.
 
 Notebook execution has a separate lifecycle. The API manages the Sandbox, while the embedded editor connects directly to JupyterLab for HTTP and kernel WebSockets.
 
@@ -42,7 +42,7 @@ flowchart TB
     sandbox -->|"runs"| jupyter
     browser <-->|"direct HTTP + WebSockets"| jupyter
     browser -->|"export draft to API"| save["FastAPI: save / publish"]
-    save -->|"persist document"| neon[("Neon Postgres")]
+    save -->|"persist document"| supabase[("Supabase Postgres")]
 ```
 
 The two FastAPI nodes represent the same backend service. The dependency drive contains prepared dependencies, including fonts from Blob, but no private notebook data. The API supplies the current draft and editor assets when creating a session. AI cell tools use the browser bridge to operate on this live editor.
@@ -54,7 +54,7 @@ The two FastAPI nodes represent the same backend service. The dependency drive c
 | Vercel Blob | Serve immutable published HTML through the CDN and store the prepared font bundle used to build dependency drives. | [[backend/publication.py#upload]], [[deployment#Published HTML in Blob]], [[editing#Plot font fallback]] |
 | Vercel AI Gateway and AI SDK | Route configured model inference and stream assistant responses; browser tools apply cell edits and execution through the authenticated Jupyter bridge. | [[backend/chat.py#stream]], [[frontend/src/Chat.tsx#Chat]], [[chat#Live document tools]] |
 | Vercel deployment identity | Supply OIDC for backend Sandbox and Gateway access. Blob uses its backend-only read/write token; database and OAuth credentials remain backend configuration. | [[backend/main.py#headers]], [[deployment#Environment configuration]] |
-| Neon via Vercel Marketplace | Persist notebook drafts, published source and fallback HTML, chat history, editor session records, and operation leases across requests and deployments. | [[backend/db.py]], [[architecture#Persistence]], [[chat#Persistent conversations]] |
+| Supabase via Vercel Marketplace | Persist notebook drafts, published source and fallback HTML, chat history, editor session records, and operation leases across requests and deployments. | [[backend/db.py]], [[architecture#Persistence]], [[chat#Persistent conversations]] |
 
 ### Main data flows
 
@@ -185,7 +185,7 @@ The app uses Geist typography, black and neutral dark surfaces, high-contrast ac
 
 Notebook and chat panels use the available workspace width with a fixed 12px outer inset and 12px gap between panels at every breakpoint. They share compact, aligned headers; chat actions are grouped at the right. Errors appear below the workspace with matching horizontal margins. Title spacing is compact.
 
-The sidebar places the search field above the high-contrast New notebook button, without shortcut hints. Clicking anywhere in the search field focuses its input. Focus highlights the whole search container with a neutral border rather than outlining the nested input. User avatars and notebook icons share a horizontal centerline, with compact user dropdown spacing. Escape dismisses the new-notebook dialog.
+The sidebar places the search field above the high-contrast New notebook button, without shortcut hints. Clicking anywhere in the search field focuses its input. Focus highlights the whole search container with a neutral border rather than outlining the nested input. User rows have 8px internal horizontal padding so hover backgrounds frame the avatar, name, and count. Notebook indentation preserves a shared avatar/icon centerline. Escape dismisses the new-notebook dialog.
 
 The sidebar brand is a Vercel triangle with “Python Notebooks”; clicking it returns to the unselected notebook state. The browser title uses the same name. A subtle GitHub icon beside the sidebar logo opens the project repository in a new tab. The breadcrumb toolbar and separate large notebook heading are omitted. Download, delete, chat, fork, and edit controls live in the notebook panel header. On mobile, an outlined Menu button precedes the title inside the notebook panel header, avoiding a separate navigation row. The welcome screen retains its own Menu button.
 
@@ -250,3 +250,9 @@ The workspace endpoint uses one metadata-only outer join, includes users without
 Titles have higher weight than cell text. Quoted phrases, OR, and minus exclusions use websearch_to_tsquery with English stemming. Results contain only notebook metadata, ranked and limited to 100. Drafts, outputs, and chat are excluded. Database-generated vectors update with publication or rename; startup adds the vector and index to existing tables. SQLite development uses title substring matching only.
 
 The browser debounces searches for 250 milliseconds, cancels stale requests, shows loading/failure/empty states, and leaves the selected notebook and active editors intact. Clearing search restores the periodically refreshed full sidebar.
+
+## About page
+
+The public `/about` route presents an architecture tour with an open/ask/run/publish flow, concise component explanations, and links to source code and architecture documentation.
+
+[[frontend/src/About.tsx#About]] covers Vercel CDN, Python hosting with FastAPI, Supabase, Blob, AI Gateway, Python AI SDK, AI SDK UI, Sandbox and its Python SDK, Jupyter, and lat.md. The sidebar exposes the page, and explicit Vercel rewrites serve the app shell for direct `/about` requests. In-app navigation retains mounted editors and background chat work, while browser history supports leaving and returning to the page. The layout uses the app's dark typography and surfaces, with responsive cards and its own scroll area.

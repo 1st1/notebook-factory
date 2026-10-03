@@ -40,7 +40,7 @@ const server=http.createServer(async(req,res)=>{
  if(text.includes('background')&&!toolOutput){res.flushHeaders();releaseBackground=finish;return;}return finish();
  }
  if(u.pathname==='/editor-frame'){boots[u.searchParams.get('id')]=(boots[u.searchParams.get('id')]||0)+1;res.setHeader('Content-Type','text/html');return res.end(`<script>addEventListener('message',e=>{if(e.data.type==='vercel-notebook-tool'){window.lastTool=e.data.tool;parent.postMessage({type:'vercel-notebook-tool-result',id:e.data.id,result:{ok:true}},'*')}if(e.data.type==='vercel-notebook-export')setTimeout(()=>parent.postMessage({type:'vercel-notebook-saved',id:e.data.id,source:JSON.stringify({live:'unsaved document'})},'*'),300);if(e.data.type==='vercel-notebook-capabilities')parent.postMessage({type:'vercel-notebook-tool-result',id:e.data.id,result:{protocol:2,ready:true,connected:window.connected!==false}},'*')})</script>Editor`);}
- const file=path.join(process.cwd(),'frontend/dist',u.pathname==='/'?'index.html':u.pathname);res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(file));
+ const file=path.join(process.cwd(),'frontend/dist',['/','/about','/about/'].includes(u.pathname)?'index.html':u.pathname);res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(file));
 });
 const tick=()=>new Promise(r=>setTimeout(r,100));
 (async()=>{await new Promise(r=>server.listen(5187,'127.0.0.1',r));const browser=await chromium.launch();try{
@@ -109,6 +109,19 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  assert(messagesSeen.at(-1).token.startsWith('one-'),'continuation retains original notebook token');
  const savesBeforeBlur=saves.length;await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await page.waitForTimeout(700);assert(saves.length>savesBeforeBlur,'switching browser focus triggers database save');
  await aButton.click();await page.getByText('Editor is ready.',{exact:true}).waitFor();assert.equal(await aButton.getByLabel('Agent working').count(),0);assert.equal(await aButton.getByLabel('Editor connected').count(),1);
+ // @lat: [[architecture#About page]]
+ await page.getByRole('link',{name:'About this project'}).click();
+ await page.getByRole('heading',{name:'A notebook is just the beginning.'}).waitFor();
+ assert.equal(new URL(page.url()).pathname,'/about');
+ assert.equal(await page.locator('.about-component').count(),10);
+ assert.equal(await page.getByRole('link',{name:'Explore the code'}).getAttribute('href'),'https://github.com/vercel-labs/notebook-factory');
+ assert.equal(await page.locator('.about-page').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+ await page.getByRole('navigation',{name:'About page'}).getByRole('link',{name:'Notebooks',exact:true}).click();
+ await aFrame.locator('body').waitFor();
+ assert.equal(await aFrame.locator('body').evaluate(()=>window.retainedValue),42,'About navigation retains the live editor');
+ assert.equal(boots.one,1);
+ await page.goBack();await page.getByRole('heading',{name:'A notebook is just the beginning.'}).waitFor();
+ await page.goBack();await page.getByTitle('Jupyter editor: Notebook one').waitFor();
  await page.locator('a.brand').click();await page.getByRole('heading',{name:'Choose a notebook.'}).waitFor();await aButton.click();assert.equal(await aFrame.locator('body').evaluate(()=>window.retainedValue),42);assert.equal(boots.one,1);assert.equal(boots.two,1);
  await page.frameLocator('iframe[title="Jupyter editor: Notebook two"]').locator('body').evaluate(()=>{window.connected=false});
  await page.clock.fastForward(15001);for(let i=0;i<30&&await bButton.getByLabel('Editor connected').count();i++)await tick();assert.equal(await bButton.getByLabel('Editor connected').count(),0,'kernel disconnection clears background dot');assert.equal(starts.length,2);

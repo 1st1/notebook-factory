@@ -1,3 +1,4 @@
+import { About } from "./About";
 import notebookTheme from "../../backend/assets/notebook_theme.css?raw";
 import notebookDarkTheme from "../../backend/templates/lab/static/theme-dark.css?raw";
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -163,6 +164,7 @@ function App() {
     can_edit: false,
     configured: false,
   });
+  const [about, setAbout] = useState(location.pathname.replace(/\/$/, "") === "/about");
   const [authLoaded, setAuthLoaded] = useState(false);
   const [users, setUsers] = useState<WorkspaceUser[]>([]);
   const [expandedUsers, setExpandedUsers] = useState<Record<number, boolean>>({});
@@ -322,10 +324,22 @@ function App() {
   }, [refresh, refreshSidebar]);
   useEffect(() => {
     const url = new URL(location.href);
-    if (selected) url.searchParams.set("notebook", selected);
+    url.pathname = about ? "/about" : "/";
+    document.title = about ? "About — Python Notebooks" : "Python Notebooks";
+    if (selected && !about) url.searchParams.set("notebook", selected);
     else url.searchParams.delete("notebook");
     history.replaceState({}, "", url);
-  }, [selected]);
+  }, [selected, about]);
+  useEffect(() => {
+    const navigate = () => {
+      const isAbout = location.pathname.replace(/\/$/, "") === "/about";
+      setAbout(isAbout);
+      if (!isAbout) setSelected(new URLSearchParams(location.search).get("notebook"));
+      setMobile(false);
+    };
+    window.addEventListener("popstate", navigate);
+    return () => window.removeEventListener("popstate", navigate);
+  }, []);
 
   const saveBridge = useCallback(async (current: Editor) => {
     if (!frames.current.get(current.token)?.contentWindow)
@@ -557,6 +571,11 @@ function App() {
     }
   }
   function choose(id: string | null) {
+    if (about) {
+      history.pushState({}, "", id ? `/?notebook=${encodeURIComponent(id)}` : "/");
+      setAbout(false);
+      setMobile(false);
+    }
     if (id === selected) return;
     setChatPanel({ id, open: true });
     if (editor?.ready) void saveEditor(editor).catch(() => setError("A notebook draft could not be saved. Keep this tab open; autosave will retry."));
@@ -652,6 +671,13 @@ function App() {
 
         </nav>
         <div className="sidebar-bottom">
+          <a className="about-link" href="/about" aria-current={about ? "page" : undefined} onClick={event => {
+            if (event.metaKey || event.ctrlKey) return;
+            event.preventDefault();
+            if (editor?.ready) void saveEditor(editor).catch(() => setError("Could not save the notebook draft; autosave will retry."));
+            if (!about) history.pushState({}, "", "/about");
+            setAbout(true); setMobile(false);
+          }}>About this project <ArrowUpRight size={13} /></a>
           {auth.user ? (
             <div className="account">
               <span className="avatar" aria-hidden="true">
@@ -687,10 +713,10 @@ function App() {
         </div>
       </aside>
       <main>
-        {!notebook && <button className="button mobile-toggle welcome-menu" aria-label="Open navigation" onClick={() => setMobile(true)}>
+        {(about || !notebook) && <button className="button mobile-toggle welcome-menu" aria-label="Open navigation" onClick={() => setMobile(true)}>
           <Menu size={14} /> Menu
         </button>}
-        {loading ? (
+        {about ? <About onBack={() => choose(selected)} /> : loading ? (
           <div className="empty">
             <LoaderCircle className="spin" />
             <p>Opening your workspace…</p>
@@ -751,7 +777,7 @@ function App() {
             )}
           </div>
         )}
-            <div className="notebook-workspace" style={notebook ? undefined : { display: "none" }}>
+            <div className="notebook-workspace" style={notebook && !about ? undefined : { display: "none" }}>
             <div className={"notebook-surface " + (activeEditor ? "editing" : "")}>
               <header className="surface-toolbar notebook-toolbar">
                 <button className="button mobile-toggle notebook-menu" aria-label="Open navigation" onClick={() => setMobile(true)}>
@@ -839,13 +865,13 @@ function App() {
               />}
             </div>
             {notebook && !authLoaded && <ChatLoading open={chatOpen} onClose={() => setChatOpen(false)} />}
-            {authLoaded && chatIds.map(id => <Suspense key={id} fallback={<ChatLoading open={selected === id && chatOpen} onClose={() => setChatPanel({ id, open: false })} />}><Chat
+            {authLoaded && chatIds.map(id => <Suspense key={id} fallback={<ChatLoading open={!about && selected === id && chatOpen} onClose={() => setChatPanel({ id, open: false })} />}><Chat
               initialPrompt={queuedPrompts[id]} onInitialPromptSent={consumeInitialPrompt}
               username={workspaceUsers.find(user => user.id === notebooks.find(n => n.id === id)?.owner_id)?.login || "User"}
               model={auth.chat_model} notebookId={id} editorStarting={startingIds.has(id)} readOnly={!auth.user || notebooks.find(n => n.id === id)?.owner_id !== auth.user.user_id}
               editor={editors[id]?.connected ? editors[id] : null}
               getFrame={() => { const current = editorsRef.current[id]; return current ? frames.current.get(current.token) ?? null : null; }}
-              disabled={selected === id && !!busy} open={selected === id && chatOpen}
+              disabled={selected === id && !!busy} open={!about && selected === id && chatOpen}
               onClose={() => setChatPanel({ id, open: false })} onTurnFinished={saveAfterTurn}
               onBusy={reportChatBusy} onRename={renameNotebook} onEnterEditing={() => openEditor(id)}
             /></Suspense>)}
