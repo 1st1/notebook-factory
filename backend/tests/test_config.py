@@ -48,3 +48,29 @@ async def test_postgres_releases_connections_and_disables_preparation(monkeypatc
     assert captured['port'] == 6543
     assert captured['sslmode'] == 'require'
     await engine.dispose()
+
+
+# @lat: [[deployment#Environment configuration]]
+async def test_connections_close_on_success_and_error(monkeypatch, tmp_path):
+    import pytest
+    from sqlalchemy import event, text
+
+    monkeypatch.setitem(sys.modules, 'config', types.SimpleNamespace(
+        DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'connections.db'}",
+    ))
+    engine = runpy.run_path(str(Path(__file__).parents[1] / 'db.py'))['engine']
+    closed = []
+
+    @event.listens_for(engine.sync_engine, 'close')
+    def record_close(connection, record):
+        closed.append(record)
+
+    async with engine.connect() as conn:
+        await conn.execute(text('SELECT 1'))
+    assert len(closed) == 1
+    with pytest.raises(RuntimeError, match='operation failed'):
+        async with engine.begin() as conn:
+            await conn.execute(text('SELECT 1'))
+            raise RuntimeError('operation failed')
+    assert len(closed) == 2
+    await engine.dispose()

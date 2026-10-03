@@ -25,9 +25,11 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app):
-    await initialize()
-    yield
-    await engine.dispose()
+    try:
+        await initialize()
+        yield
+    finally:
+        await engine.dispose()
 
 
 app = FastAPI(lifespan=lifespan)
