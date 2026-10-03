@@ -104,9 +104,11 @@ async function startEditor(
 function PublishedNotebook({ notebook, version }: { notebook: Notebook; version: number }) {
   const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [frameLoaded, setFrameLoaded] = useState(false);
   useEffect(() => {
     setHtml(null);
     setFailed(false);
+    setFrameLoaded(false);
     if (!notebook.render_url) return;
     const controller = new AbortController();
     fetch(notebook.render_url, { signal: controller.signal, credentials: "omit", referrerPolicy: "no-referrer" })
@@ -120,13 +122,17 @@ function PublishedNotebook({ notebook, version }: { notebook: Notebook; version:
   }, [notebook.render_url]);
   const useBlob = notebook.render_url && !failed;
   if (useBlob && html === null) return <div className="empty" role="status">Loading notebook…</div>;
-  return <iframe
+  return <div className="published-notebook" aria-busy={!frameLoaded}>
+    {!frameLoaded && <div className="notebook-loading" role="status"><LoaderCircle size={16} className="spin" />Loading notebook…</div>}
+    <iframe
     title="Rendered notebook"
+    style={{ visibility: frameLoaded ? "visible" : "hidden" }}
+    onLoad={() => setFrameLoaded(true)}
     sandbox="allow-scripts allow-downloads"
     srcDoc={useBlob ? html! : undefined}
     src={useBlob ? undefined : `/api/notebooks/${notebook.id}/render?v=${version}`}
     referrerPolicy="no-referrer"
-  />;
+  /></div>;
 }
 
 const WORKSPACE_CACHE = "notebook-factory:public-workspace:v2";
@@ -597,6 +603,15 @@ function App() {
             <Github size={15} aria-hidden="true" />
           </a>
         </div>
+        <label className="search">
+          <Search size={15} />
+          <input
+            aria-label="Search notebooks"
+            placeholder="Find a notebook…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
         <button
           className="new-button"
           disabled={!!busy || (!!auth.user && !auth.can_edit)}
@@ -608,15 +623,6 @@ function App() {
         >
           <Plus size={17} /> New notebook
         </button>
-        <label className="search">
-          <Search size={15} />
-          <input
-            aria-label="Search notebooks"
-            placeholder="Find a notebook…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
         <nav aria-label="Notebooks">
           {sortedUsers.map(owner => {
             const mine = owner.id === auth.user?.user_id;

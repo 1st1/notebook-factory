@@ -119,6 +119,8 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 
 [[backend/render.py#render]] converts notebooks to HTML during creation and publication. Public views fetch published HTML from Blob’s CDN into a sandboxed iframe, without executing cells or running nbconvert. [[backend/render.py#validate]] enforces valid notebook structure and the size limit from [[backend/config.py#MAX_BYTES]].
 
+Published iframes stay hidden behind a dark loading surface until their load event, preventing a white flash during navigation.
+
 Published HTML uses the JupyterLab dark palette with shared notebook surface overrides. The browser and fallback endpoint also theme older cached HTML without rerunning cells; existing plot images retain their saved colors.
 
 Lab and base templates are bundled in [backend/templates](../backend/templates), with explicit template search paths. Functions cannot rely on system-installed Jupyter data directories. Public downloads also return `published`, even for the signed-in owner.
@@ -183,7 +185,7 @@ The app uses Geist typography, black and neutral dark surfaces, high-contrast ac
 
 Notebook and chat panels use the available workspace width with a fixed 12px outer inset and 12px gap between panels at every breakpoint. They share compact, aligned headers; chat actions are grouped at the right. Errors appear below the workspace with matching horizontal margins. Title spacing is compact.
 
-The sidebar uses a green creation button and white search field without shortcut hints. Clicking anywhere in the search field focuses its input. Focus highlights the whole search container with a neutral border rather than outlining the nested input. User avatars and notebook icons share a horizontal centerline, with compact user dropdown spacing. Escape dismisses the new-notebook dialog.
+The sidebar places the search field above the high-contrast New notebook button, without shortcut hints. Clicking anywhere in the search field focuses its input. Focus highlights the whole search container with a neutral border rather than outlining the nested input. User avatars and notebook icons share a horizontal centerline, with compact user dropdown spacing. Escape dismisses the new-notebook dialog.
 
 The sidebar brand is a Vercel triangle with “Python Notebooks”; clicking it returns to the unselected notebook state. The browser title uses the same name. A subtle GitHub icon beside the sidebar logo opens the project repository in a new tab. The breadcrumb toolbar and separate large notebook heading are omitted. Download, delete, chat, fork, and edit controls live in the notebook panel header. On mobile, an outlined Menu button precedes the title inside the notebook panel header, avoiding a separate navigation row. The welcome screen retains its own Menu button.
 

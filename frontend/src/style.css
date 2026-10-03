@@ -128,7 +128,7 @@ svg {
 }
 .brand-icon { width: 22px; height: 22px; flex-shrink: 0; color: var(--foreground); }
 .new-button {
-  margin-top: 28px;
+  margin: 0 0 18px;
   border: 1px solid var(--border);
   background: var(--background);
   color: var(--foreground);
@@ -147,7 +147,7 @@ svg {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  margin: 14px 0 18px;
+  margin: 28px 0 14px;
   padding: 10px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -706,7 +706,7 @@ main > .progress { flex-shrink: 0; }
   .title-row { flex-direction: row; align-items: center; margin: 0 0 8px; gap: 12px; }
   h1 { font-size: 24px; }
   .sidebar { padding-top: 16px; padding-bottom: 8px; }
-  .new-button { margin-top: 16px; }
+  .search { margin-top: 16px; }
   .search { padding-top: 12px; padding-bottom: 12px; }
   .sidebar-bottom { padding-top: 8px; }
 }
@@ -861,3 +861,7 @@ button:focus-visible, a:focus-visible, input:focus-visible:not(.search input), t
 .chat-message a { color: var(--accent); }
 .chat-tool-code, .chat-message code, .chat-message pre, .setup-output { font-family: "Geist Mono", monospace; }
 * { scrollbar-color: #444 transparent; scrollbar-width: thin; }
+
+.published-notebook { display: flex; flex-direction: column; flex: 1; min-height: 0; position: relative; background: var(--surface); }
+.notebook-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--surface); color: var(--muted); font-size: 12px; }
+iframe { color-scheme: dark; }
