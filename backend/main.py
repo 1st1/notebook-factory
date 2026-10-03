@@ -169,7 +169,7 @@ async def fork_notebook(id: str, owner=Depends(require_user)):
     fork_id = str(uuid4())
     html = await anyio.to_thread.run_sync(render, source)
     row = dict(
-        id=fork_id, owner_id=owner["id"], title=original["title"],
+        id=fork_id, owner_id=owner["id"], title=f"fork of {original['title']}",
         source=source, published=source, published_html=html,
         render_url=await publication.upload(fork_id, html),
         created_at=timestamp(), updated_at=timestamp(), revision=1,

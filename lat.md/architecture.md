@@ -227,7 +227,7 @@ The browser refreshes this single endpoint every 30 seconds with overlapping req
 
 The sidebar expands the current user's avatar/name group first, followed by other users alphabetically and collapsed by default. Search expands matching groups; notebook selection retains background editors and agent sessions.
 
-Other users' notebooks and saved conversations are read-only, including for anonymous visitors. Only the owner can start an editor, send chat messages, clear history, rename, save, or delete. [[backend/main.py#fork_notebook]] copies published cells, metadata, and outputs into a new notebook owned by the caller. It renders a separate Blob artifact and initializes empty chat/history and no editing session. Unsaved/private drafts are not copied.
+Other users' notebooks and saved conversations are read-only, including for anonymous visitors. Only the owner can start an editor, send chat messages, clear history, rename, save, or delete. [[backend/main.py#fork_notebook]] copies published cells, metadata, and outputs into a new notebook owned by the caller. The new title is prefixed with “fork of ”. It renders a separate Blob artifact and initializes empty chat/history and no editing session. Unsaved/private drafts are not copied.
 
 ## Multi-user isolation tests
 

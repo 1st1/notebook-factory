@@ -854,6 +854,7 @@ def test_multiuser_ownership_readonly_history_and_fork_without_chat(client, monk
     assert client.get(f"/api/notebooks/{original_id}/download").text == original["published"]
     fork = client.post(f"/api/notebooks/{original_id}/fork").json()
     row = client.portal.call(main.get_notebook, fork["id"])
+    assert fork["title"] == row["title"] == f"fork of {original['title']}"
     assert row["owner_id"] == account["user"]["user_id"]
     assert row["source"] == row["published"] == original["published"]
     assert row["chat_history"] is None and row["chat_revision"] == 0 and row["editor"] is None
