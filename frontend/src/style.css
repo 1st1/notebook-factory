@@ -135,7 +135,9 @@ svg {
   border: 1px solid var(--border);
   border-radius: 2px;
 }
-.search:focus-within {
+.search:focus-within,
+.chat-panel textarea:focus {
+  outline: none;
   border-color: #888;
   box-shadow: 0 0 0 1px #888;
 }
