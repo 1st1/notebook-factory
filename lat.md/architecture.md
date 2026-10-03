@@ -253,6 +253,6 @@ The browser debounces searches for 250 milliseconds, cancels stale requests, sho
 
 ## About page
 
-The public `/about` route presents an architecture tour with an open/ask/run/publish flow, concise component explanations, and links to source code and architecture documentation.
+The public `/about` route provides a compact technical overview, with component responsibilities and links to source code and architecture documentation.
 
-[[frontend/src/About.tsx#About]] covers Vercel CDN, Python hosting with FastAPI, Supabase, Blob, AI Gateway, Python AI SDK, AI SDK UI, Sandbox and its Python SDK, Jupyter, and lat.md. The sidebar exposes the page, and the Vite build emits an About app shell for direct `/about` requests. In-app navigation retains mounted editors and background chat work, while browser history supports leaving and returning to the page. The layout uses the app's dark typography and surfaces, with responsive cards and its own scroll area.
+[[frontend/src/About.tsx#About]] covers Vercel CDN, Python hosting with FastAPI, Supabase, Blob, AI Gateway, Python AI SDK, AI SDK UI, Sandbox and its Python SDK, Jupyter, and lat.md. The sidebar exposes the page, and the Vite build emits an About app shell for direct `/about` requests. In-app navigation retains mounted editors and background chat work, while browser history supports leaving and returning to the page. The layout uses simple typography and a responsive definition list in its own scroll area.
