@@ -65,8 +65,7 @@ def new_notebook(title: str, prompt: str = ""):
                 nbformat.v4.new_markdown_cell(
                     "# " + title + "\n\n" + introduction
                 ),
-                nbformat.v4.new_code_cell('print("Hello, notebook.")'),
-            ],
+            ] + ([] if prompt.strip() else [nbformat.v4.new_code_cell('print("Hello, notebook.")')]),
             metadata={
                 "kernelspec": {
                     "display_name": "Python 3",

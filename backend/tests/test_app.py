@@ -904,7 +904,11 @@ def test_creation_prompt_is_notebook_introduction(client, prompt):
     text = "".join(opening["source"])
     assert text.startswith("# Experiment\n\n")
     if prompt.strip():
+        assert len(notebook["cells"]) == 1
         assert text == "# Experiment\n\n" + prompt.strip()
         assert "Start with a question" not in text
     else:
+        assert len(notebook["cells"]) == 2
+        assert notebook["cells"][1]["cell_type"] == "code"
+        assert "Hello, notebook." in "".join(notebook["cells"][1]["source"])
         assert "Start with a question" in text
