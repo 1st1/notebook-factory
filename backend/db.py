@@ -21,7 +21,7 @@ from config import DATABASE_URL
 engine = create_async_engine(
     DATABASE_URL,
     poolclass=NullPool,
-    **({"connect_args": {"prepare_threshold": None}} if DATABASE_URL.startswith("postgresql+") else {}),
+    **({"connect_args": {"prepare_threshold": None, "sslnegotiation": "postgres"}} if DATABASE_URL.startswith("postgresql+") else {}),
 )
 metadata = MetaData()
 users = Table(

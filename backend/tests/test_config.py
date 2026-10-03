@@ -44,6 +44,7 @@ async def test_postgres_releases_connections_and_disables_preparation(monkeypatc
         async with engine.connect():
             pass
     assert captured['prepare_threshold'] is None
+    assert captured['sslnegotiation'] == 'postgres'
     assert captured['port'] == 6543
     assert captured['sslmode'] == 'require'
     await engine.dispose()
