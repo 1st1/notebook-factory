@@ -26,7 +26,7 @@ try {
   // Lat's own build helper installs published embedding binaries without Rust.
   pnpm('exec', 'env', '-u', 'npm_execpath', 'node', 'scripts/prepare-site-packages.mjs');
   pnpm('build');
-  run('node', [join(toolchain, 'dist/src/cli/index.js'), '--dir', root, 'ui', 'build', 'static', output, '--base', '/lat/', '--logo-text', 'Python Notebooks', '--force'], root);
+  run('node', [join(toolchain, 'dist/src/cli/index.js'), '--dir', root, 'ui', 'build', 'static', output, '--base', '/lat/', '--force'], root);
   await mkdir(dirname(destination), { recursive: true });
   await rm(destination, { recursive: true, force: true });
   // The exporter also emits a root redirect; copy only /lat to preserve the app.
