@@ -400,6 +400,7 @@ export function Chat({
           rows={3}
         />
         <div>
+          {!busy && <kbd className="chat-send-shortcut" title="Cmd+Enter or Ctrl+Enter to send">⌘ Enter</kbd>}
           {busy ? (
             <button
               type="button"

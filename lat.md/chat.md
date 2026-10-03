@@ -2,7 +2,7 @@
 
 Chat is available while viewing or editing a notebook. Viewing answers use published content without a Sandbox; edits and execution require an editor, opened through explicit Yes/No consent.
 
-[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and validates an editor token when supplied. Tokenless owner requests use the restricted viewing prompt and tools. Cmd+Enter or Ctrl+Enter submits the chat composer; plain Enter inserts a newline. History is stored per notebook in Postgres and readable by everyone; only its owner can send messages or save/clear history.
+[[frontend/src/Chat.tsx#Chat]] uses useChat and DefaultChatTransport. [[backend/main.py#notebook_chat]] requires owner authentication, same-origin requests, and validates an editor token when supplied. Tokenless owner requests use the restricted viewing prompt and tools. Cmd+Enter or Ctrl+Enter submits the chat composer; plain Enter inserts a newline. A subtle ⌘ Enter hint appears beside Send and hides while a reply is running. History is stored per notebook in Postgres and readable by everyone; only its owner can send messages or save/clear history.
 
 ## Agent and streaming
 
