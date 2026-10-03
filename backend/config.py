@@ -28,6 +28,8 @@ if DATABASE_URL.startswith(("postgres://", "postgresql://")):
         query["ssl"] = query.pop("sslmode")
     # libpq-only option; asyncpg negotiates SCRAM itself.
     query.pop("channel_binding", None)
+    # Supabase Marketplace attribution is not an asyncpg connection option.
+    query.pop("supa", None)
     DATABASE_URL = urlunsplit(url._replace(query=urlencode(query)))
 if PRODUCTION and not DATABASE_URL.startswith("postgresql+asyncpg://"):
     raise RuntimeError("Use a durable Postgres DATABASE_URL on Vercel")
