@@ -27,7 +27,7 @@ const server=http.createServer(async(req,res)=>{
  if(u.pathname.endsWith('/close')){closeSource=body.source;if(holdClose)return;return res.end('{}');}
  if(u.pathname.endsWith('/fork')){const original=notebooks.find(n=>n.id===id);const fork={...original,id:'forked',owner_id:1};notebooks.push(fork);return res.end(JSON.stringify(fork));}
  if(u.pathname.endsWith('/download'))return res.end(JSON.stringify(nb));
- if(u.pathname.endsWith('/render')){res.setHeader('Content-Type','text/html');return res.end('Published '+id);}
+ if(u.pathname.endsWith('/render')){res.setHeader('Content-Type','text/html');return res.end(process.env.RENDER_FIXTURE_PATH?fs.readFileSync(process.env.RENDER_FIXTURE_PATH):'Published '+id);}
  if(u.pathname.endsWith('/chat')){
  messagesSeen.push(body);const all=body.messages.flatMap(m=>m.parts);const toolOutput=all.findLast(p=>p.type.startsWith('tool-')&&p.state==='output-available');const text=all.filter(p=>p.type==='text').map(p=>p.text).join(' ');const name=text.includes('background')?'insert_cell':text.includes('change')?'request_editing':'read_notebook';
  res.setHeader('Content-Type','text/event-stream');res.setHeader('x-vercel-ai-ui-message-stream','v1');
@@ -184,6 +184,13 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  assert.equal(await amyPage.locator('.owner-toggle').filter({hasText:'1st1'}).getAttribute('aria-expanded'),'false');
  assert(await amyPage.getByRole('button',{name:'Edit notebook',exact:true}).isVisible());
  await amyPage.close();
+ if(process.env.SCREENSHOT_PATH){
+   await page.screenshot({path:process.env.SCREENSHOT_PATH.replace('.png','-desktop.png')});
+   await page.getByRole('button',{name:'New notebook',exact:true}).click();
+   await page.getByLabel('Notebook title').fill('A new experiment');
+   await page.screenshot({path:process.env.SCREENSHOT_PATH.replace('.png','-dialog.png')});
+   await page.getByLabel('Notebook title').press('Escape');
+ }
  await page.setViewportSize({width:390,height:844});
  const closeChat=page.getByRole('button',{name:'Close chat',exact:true});
  if(await closeChat.isVisible())await closeChat.click();

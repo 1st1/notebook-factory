@@ -1,0 +1,39 @@
+/* Shared notebook surface overrides for JupyterLab and published HTML. */
+:root {
+  color-scheme: dark;
+  --jp-layout-color0: #000;
+  --jp-layout-color1: #0a0a0a;
+  --jp-layout-color2: #171717;
+  --jp-layout-color3: #222;
+  --jp-layout-color4: #333;
+  --jp-border-color0: #444;
+  --jp-border-color1: #333;
+  --jp-border-color2: #222;
+  --jp-border-color3: #171717;
+  --jp-ui-font-color0: #fff;
+  --jp-ui-font-color1: #ededed;
+  --jp-ui-font-color2: #a1a1a1;
+  --jp-content-font-color0: #fff;
+  --jp-content-font-color1: #ededed;
+  --jp-content-font-color2: #a1a1a1;
+  --jp-cell-editor-background: #111;
+  --jp-cell-editor-border-color: #333;
+  --jp-cell-editor-active-background: #111;
+  --jp-cell-editor-active-border-color: #52a8ff;
+  --jp-cell-inprompt-font-color: #888;
+  --jp-cell-outprompt-font-color: #888;
+  --jp-brand-color1: #52a8ff;
+  --jp-content-link-color: #52a8ff;
+  --jp-border-radius: 2px;
+  --jp-ui-font-family: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --jp-content-font-family: var(--jp-ui-font-family);
+  --jp-code-font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+html, body { background: #0a0a0a !important; color: #ededed; }
+.jp-Notebook { background: #0a0a0a; }
+.jp-InputArea-editor, .jp-Toolbar, .jp-Dialog-content { border-radius: 2px; }
+.jp-RenderedHTMLCommon pre, .jp-RenderedHTMLCommon code { background: #171717; color: #ededed; }
+.jp-RenderedHTMLCommon tbody tr:nth-child(odd) { background: #111; }
+.jp-RenderedHTMLCommon tbody tr:hover { background: #222; }
+.jp-RenderedHTMLCommon a { color: #52a8ff; }
+* { scrollbar-color: #444 transparent; scrollbar-width: thin; }

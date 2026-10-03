@@ -77,6 +77,8 @@ async def _start_runtime(owner, report=lambda kind, message: None):
                 "patch_jupyter_template.py": ".patch-jupyter-template.py",
                 "sitecustomize.py": "sitecustomize.py",
                 "focused_editor.css": ".vercel-notebook-focused-editor.css",
+                "notebook_theme.css": ".notebook-theme.css",
+                "matplotlibrc": ".notebook-matplotlibrc",
                 "jupyter_bridge.js": ".vercel-notebook-jupyter-bridge.js",
             }.items():
                 content = (
@@ -94,7 +96,7 @@ async def _start_runtime(owner, report=lambda kind, message: None):
                 "application-extension/context-menu": {"disabled": True},
                 "apputils-extension/themes": {
                     "adaptive-theme": False,
-                    "theme": "JupyterLab Light",
+                    "theme": "JupyterLab Dark",
                 },
                 "apputils-extension/notification": {
                     "checkForUpdates": False,

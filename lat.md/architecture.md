@@ -119,6 +119,8 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 
 [[backend/render.py#render]] converts notebooks to HTML during creation and publication. Public views fetch published HTML from Blob’s CDN into a sandboxed iframe, without executing cells or running nbconvert. [[backend/render.py#validate]] enforces valid notebook structure and the size limit from [[backend/config.py#MAX_BYTES]].
 
+Published HTML uses the JupyterLab dark palette with shared notebook surface overrides. The browser and fallback endpoint also theme older cached HTML without rerunning cells; existing plot images retain their saved colors.
+
 Lab and base templates are bundled in [backend/templates](../backend/templates), with explicit template search paths. Functions cannot rely on system-installed Jupyter data directories. Public downloads also return `published`, even for the signed-in owner.
 
 The rendered iframe and API response both enforce sandboxing. The CSP blocks network connections and nested frames while permitting selected script CDNs, styles, fonts, and images. Some interactive outputs therefore do not work publicly. HTML conversion runs off the API event loop. Blob upload completes first, then source, fallback HTML, Blob URL, and revision are published in one transaction; rendering failure preserves the prior publication. Legacy rows render once on first read, with a revision-guarded cache write that cannot overwrite a newer publication. Notebook listings select metadata only.
@@ -176,6 +178,8 @@ It also checks bundled rendering templates, workspace-relative launcher paths, p
 ## Viewport layout
 
 [Frontend styles](../frontend/src/style.css) fixes the app to the dynamic viewport height and suppresses outer document scrolling and overscroll. The notebook surface fills the remaining space; its compact panel header contains the title and notebook actions.
+
+The app uses Geist typography, black and neutral dark surfaces, high-contrast actions, semantic status colors, and 2px control/panel corners. Avatars and status dots remain circular.
 
 Notebook and chat panels use the available workspace width with a fixed 12px outer inset and 12px gap between panels at every breakpoint. They share compact, aligned headers; chat actions are grouped at the right. Errors appear below the workspace with matching horizontal margins. Title spacing is compact.
 

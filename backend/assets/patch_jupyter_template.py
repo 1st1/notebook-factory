@@ -11,6 +11,9 @@ source = source_path.read_text()
 if "jupyter-config-data" not in source or "main." not in source:
     raise RuntimeError("The installed JupyterLab index is missing its application bundle")
 css = Path(".vercel-notebook-focused-editor.css").read_text()
+theme = Path(".notebook-theme.css")
+if theme.exists():
+    css += "\n" + theme.read_text()
 bridge = Path(".vercel-notebook-jupyter-bridge.js").read_text()
 marker = "<!-- vercel-notebook-save-bridge -->"
 if 'id="vercel-notebook-focused-editor"' not in source:

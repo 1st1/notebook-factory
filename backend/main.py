@@ -18,7 +18,7 @@ import publication
 from auth import require_owner, require_user
 from auth import router as auth_router
 from db import engine, initialize, notebooks, timestamp, users
-from render import CONTENT_POLICY, new_notebook, render, validate
+from render import CONTENT_POLICY, new_notebook, render, themed_html, validate
 
 log = logging.getLogger(__name__)
 
@@ -218,7 +218,7 @@ async def rendered(id: str):
                 .values(render_url=url)
             )
     return HTMLResponse(
-        html,
+        themed_html(html),
         headers={"Content-Security-Policy": "sandbox allow-scripts; " + CONTENT_POLICY},
     )
 

@@ -1,3 +1,5 @@
+import notebookTheme from "../../backend/assets/notebook_theme.css?raw";
+import notebookDarkTheme from "../../backend/templates/lab/static/theme-dark.css?raw";
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -112,7 +114,7 @@ function PublishedNotebook({ notebook, version }: { notebook: Notebook; version:
         if (!response.ok) throw new Error("Notebook unavailable");
         return response.text();
       })
-      .then(setHtml)
+      .then(value => setHtml(value.includes('id="notebook-factory-theme"') ? value : value.replace("</head>", `<style id="notebook-factory-theme">${notebookDarkTheme}\n${notebookTheme}\nmain{max-width:none;margin:0;padding:24px!important}.jp-Notebook{padding:0!important}</style></head>`)))
       .catch(error => { if (error.name !== "AbortError") setFailed(true); });
     return () => controller.abort();
   }, [notebook.render_url]);

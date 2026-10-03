@@ -1,0 +1,20 @@
+# Dark defaults, applied before kernel launch without importing Matplotlib.
+font.family: DejaVu Sans, Noto Emoji, Noto Sans JP
+font.sans-serif: DejaVu Sans, Noto Emoji, Noto Sans JP
+figure.facecolor: 0a0a0a
+figure.edgecolor: 0a0a0a
+axes.facecolor: 0a0a0a
+axes.edgecolor: 666666
+axes.labelcolor: ededed
+text.color: ededed
+xtick.color: a1a1a1
+ytick.color: a1a1a1
+grid.color: 333333
+grid.alpha: 0.65
+axes.prop_cycle: cycler('color', ['52a8ff', '46a758', 'f5a623', 'b48cff', 'ff6166', '50e3c2', 'f778ba'])
+patch.edgecolor: ededed
+lines.color: 52a8ff
+savefig.facecolor: auto
+savefig.edgecolor: auto
+legend.facecolor: 111111
+legend.edgecolor: 333333

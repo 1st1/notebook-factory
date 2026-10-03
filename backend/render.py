@@ -9,6 +9,16 @@ from config import MAX_BYTES
 CONTENT_POLICY = "default-src 'none'; base-uri 'none'; form-action 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https:; img-src data: https:; font-src data: https:; connect-src 'none'; frame-src 'none'"
 
 
+def themed_html(html: str):
+    if 'id="notebook-factory-theme"' in html:
+        return html
+    root = Path(__file__).parent
+    css = (root / "templates/lab/static/theme-dark.css").read_text()
+    css += (root / "assets/notebook_theme.css").read_text()
+    css += "main{max-width:none;margin:0;padding:24px!important}.jp-Notebook{padding:0!important}"
+    return html.replace("</head>", '<style id="notebook-factory-theme">' + css + "</style></head>", 1)
+
+
 def isolated_html(html: str):
     # srcdoc has no HTTP response headers; put the policy before all notebook content.
     policy = (
@@ -16,7 +26,7 @@ def isolated_html(html: str):
         + escape(CONTENT_POLICY, quote=True)
         + '">'
     )
-    return html.replace("<head>", "<head>" + policy, 1)
+    return themed_html(html).replace("<head>", "<head>" + policy, 1)
 
 
 def validate(source: str):
@@ -36,14 +46,14 @@ def render(source: str):
     templates = str(Path(__file__).with_name("templates"))
     exporter = HTMLExporter(
         template_name="lab",
+        theme="dark",
         extra_template_basedirs=[templates],
         extra_template_paths=[templates],
     )
     exporter.exclude_input_prompt = False
     exporter.exclude_output_prompt = False
     html, _ = exporter.from_notebook_node(validate(source))
-    style = "<style>body{background:#fff!important}main{max-width:1040px;margin:0 auto;padding:32px 24px!important}.jp-Notebook{padding:0!important}</style>"
-    return html.replace("</head>", style + "</head>")
+    return themed_html(html)
 
 
 def new_notebook(title: str):

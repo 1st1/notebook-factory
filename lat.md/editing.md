@@ -194,3 +194,9 @@ The iframe pool remains mounted even on the welcome screen. The Save & exit cont
 ## Retained editor connection tests
 
 The bridge reports document readiness separately from kernel connectivity. A loaded document without a connected kernel must not qualify for a green running-editor dot.
+
+## Dark notebook styling
+
+The editor starts with JupyterLab Dark and shared neutral surface overrides. Matplotlib defaults to dark figures and axes with light labels, ticks, and a contrasting series palette.
+
+[[backend/assets/jupyter_launcher.py]] writes the bundled [Matplotlib configuration](../backend/assets/matplotlibrc) after dependency restoration and before launching Jupyter. This updates both new and cached workspaces without importing Matplotlib at startup or rebuilding the dependency drive. DejaVu Sans and Noto fallback fonts remain configured. Users can override plot styles explicitly; saved plot images need rerunning to change their appearance. The agent preserves dark defaults and uses Plotly's dark template when generating charts.

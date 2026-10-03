@@ -188,6 +188,8 @@ def test_render_without_system_jupyter_templates(monkeypatch):
     assert "Bundled templates" in html
     assert "Hello, notebook." in html
     assert "jp-Notebook" in html
+    assert 'id="notebook-factory-theme"' in html
+    assert "color-scheme: dark" in html
 
 
 def test_launcher_paths_follow_remote_script_location(tmp_path, monkeypatch):
@@ -201,6 +203,9 @@ def test_launcher_paths_follow_remote_script_location(tmp_path, monkeypatch):
     workspace.mkdir()
     launcher = workspace / ".notebook-editor.py"
     launcher.write_text((Path(main.__file__).parent / "assets/jupyter_launcher.py").read_text())
+    plot_style = (Path(main.__file__).parent / "assets/matplotlibrc").read_text()
+    (workspace / ".notebook-matplotlibrc").write_text(plot_style)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     module = ModuleType("jupyterlab.labapp")
     observed = []
     module.main = lambda: observed.extend(sys.argv) or 0
@@ -214,6 +219,7 @@ def test_launcher_paths_follow_remote_script_location(tmp_path, monkeypatch):
     assert f"--LabApp.templates_dir={workspace}/.jupyter/templates" in observed
     assert f"--LabApp.user_settings_dir={workspace}/.jupyter/lab/user-settings" in observed
     assert f"--ServerApp.root_dir={workspace}" in observed
+    assert (tmp_path / ".config/matplotlib/matplotlibrc").read_text() == plot_style
 
 
 def test_setup_stream_progress_ready_and_reuse(client, monkeypatch):
