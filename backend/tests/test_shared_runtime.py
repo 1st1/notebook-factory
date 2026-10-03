@@ -35,7 +35,9 @@ async def test_concurrent_notebooks_share_runtime_and_keep_distinct_documents(mo
     assert a['path'] != b['path'] and a['token'] != b['token']
     instance.fs.write_text.assert_any_await(a['path'], 'source A')
     instance.fs.write_text.assert_any_await(b['path'], 'source B')
-    assert a['url'].endswith('?nf_editor_token=' + a['token'])
+    for item in (a, b):
+        assert '/doc/workspaces/nf-' + item['token'] + '/tree/' in item['url']
+        assert item['url'].endswith('?nf_editor_token=' + item['token'])
 
 
 async def test_stop_only_deletes_matching_kernel_and_document(monkeypatch):

@@ -249,13 +249,13 @@ async def start(source: str, report=lambda kind, message: None, *, notebook_id: 
         return {
             "name": current["name"], "shared": True, "base_url": current["base_url"],
             "path": path, "token": token,
-            "url": current["base_url"] + "/doc/tree/" + quote(path, safe="/") + "?nf_editor_token=" + token,
+            "url": current["base_url"] + "/doc/workspaces/nf-" + token + "/tree/" + quote(path, safe="/") + "?nf_editor_token=" + token,
         }
 
 
 async def check_available(editor):
     async with session():
-        current = {**editor, "base_url": editor.get("base_url") or editor["url"].split("/doc/tree/", 1)[0]}
+        current = {**editor, "base_url": editor.get("base_url") or editor["url"].split("/doc/", 1)[0]}
         if editor.get("shared"):
             registered = await load_runtime(editor["name"])
             if registered and registered.get("base_url") and registered["base_url"] != current["base_url"]:
@@ -276,7 +276,7 @@ async def read(editor: dict, *, extend=True):
         if current is None or current.status != sandbox.SandboxStatus.RUNNING:
             raise HTTPException(410, "Editor expired. Reopen it to restore the last saved draft.")
         # A bounded HTTP read avoids loading an unbounded notebook into the function.
-        base = editor.get("base_url") or editor["url"].split("/doc/tree/", 1)[0]
+        base = editor.get("base_url") or editor["url"].split("/doc/", 1)[0]
         async with httpx.AsyncClient(timeout=20) as client:
             async with client.stream("GET", base + "/files/" + quote(editor.get("path", "notebook.ipynb"), safe="/")) as response:
                 if response.status_code != 200:

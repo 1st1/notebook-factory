@@ -179,10 +179,11 @@ test('exports full live notebook without server access, even while a save is stu
 });
 
 // @lat: [[editing#Shared document bridge tests]]
-test('shared-server bridge uses the exact document path and per-editor token', async () => {
+for (const route of ['doc/tree', 'doc/workspaces/nf-explicit/tree', 'doc/workspaces/auto-Z/tree']) {
+test(`shared-server bridge uses the exact document path and token through ${route}`,  async () => {
   const context = { path: 'notebooks/abc/notebook-unique.ipynb', ready: Promise.resolve(), save: async () => {} };
   const { handlers, parent } = bridge(context, {},
-    'https://sandbox.test/server-cap/doc/tree/notebooks/abc/notebook-unique.ipynb?nf_editor_token=editor-cap');
+    `https://sandbox.test/server-cap/${route}/notebooks/abc/notebook-unique.ipynb?nf_editor_token=editor-cap`);
   let response;
   parent.postMessage = value => { response = value; };
   await handlers.message({ source: parent, origin: 'https://app.test', data: {
@@ -195,6 +196,7 @@ test('shared-server bridge uses the exact document path and per-editor token', a
   assert.equal(response.id, 'good');
   assert.equal(response.error, undefined);
 });
+}
 
 // @lat: [[editing#Retained editor connection tests]]
 test('connection reports distinguish a loaded notebook from a connected kernel', async () => {

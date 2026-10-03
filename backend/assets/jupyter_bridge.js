@@ -6,7 +6,8 @@
         }
 
         var bridgeToken = parsedUrl.searchParams.get("nf_editor_token") || window.location.pathname.split("/").filter(Boolean)[0];
-        var notebookPath = decodeURIComponent(window.location.pathname.split("/doc/tree/")[1] || "notebook.ipynb");
+        var documentRoute = window.location.pathname.match(/\/doc\/(?:workspaces\/[^/]+\/)?tree\/(.*)$/);
+        var notebookPath = decodeURIComponent(documentRoute ? documentRoute[1] : "notebook.ipynb");
         var jupyterApp;
         var focusedShell;
         var applyingFocusedLayout = false;
