@@ -581,19 +581,17 @@ function App() {
               void choose(null);
             }}
           >
-            <span className="brand-icon">
-              <BookOpen size={19} />
-            </span>
-            <span>
-              notebook<span className="brand-light">factory</span>
-            </span>
+            <svg className="brand-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 2L24 22H0Z" fill="currentColor" />
+            </svg>
+            <span>Python Notebooks</span>
           </a>
           <a
             className="repository-link"
             href="https://github.com/vercel-labs/notebook-factory"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="View Notebook Factory on GitHub"
+            aria-label="View Python Notebooks on GitHub"
             title="View on GitHub"
           >
             <Github size={15} aria-hidden="true" />

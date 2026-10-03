@@ -185,7 +185,7 @@ Notebook and chat panels use the available workspace width with a fixed 12px out
 
 The sidebar uses a green creation button and white search field without shortcut hints. Clicking anywhere in the search field focuses its input. User avatars and notebook icons share a horizontal centerline, with compact user dropdown spacing. Escape dismisses the new-notebook dialog.
 
-A subtle GitHub icon beside the sidebar logo opens the project repository in a new tab. The breadcrumb toolbar and separate large notebook heading are omitted. Download, delete, chat, fork, and edit controls live in the notebook panel header. On mobile, an outlined Menu button precedes the title inside the notebook panel header, avoiding a separate navigation row. The welcome screen retains its own Menu button.
+The sidebar brand is a Vercel triangle with “Python Notebooks”; clicking it returns to the unselected notebook state. The browser title uses the same name. A subtle GitHub icon beside the sidebar logo opens the project repository in a new tab. The breadcrumb toolbar and separate large notebook heading are omitted. Download, delete, chat, fork, and edit controls live in the notebook panel header. On mobile, an outlined Menu button precedes the title inside the notebook panel header, avoiding a separate navigation row. The welcome screen retains its own Menu button.
 
 Published and editor iframes scroll internally rather than imposing minimum heights on the page. The sidebar notebook list scrolls independently with overscroll disabled; sidebar branding and account controls stay fixed. Setup output has a bounded scroll area. Compact spacing preserves notebook space on short landscape screens.
 

@@ -121,22 +121,12 @@ svg {
   align-items: center;
   gap: 9px;
   font-family: Geist, sans-serif;
-  font-weight: 800;
-  font-size: 17px;
-  letter-spacing: -0.7px;
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.5px;
+  white-space: nowrap;
 }
-.brand-icon {
-  background: var(--background);
-  color: var(--foreground);
-  display: grid;
-  place-items: center;
-  border-radius: 2px;
-  width: 31px;
-  height: 33px;
-}
-.brand-light {
-  font-weight: 500;
-}
+.brand-icon { width: 22px; height: 22px; flex-shrink: 0; color: var(--foreground); }
 .new-button {
   margin-top: 28px;
   border: 1px solid var(--border);
@@ -856,7 +846,6 @@ main { padding-top: 12px; }
 .notebook-link.active, .chat-message.user { background: var(--active); color: var(--foreground); }
 .button.primary, .new-button { background: var(--foreground); border-color: var(--foreground); color: var(--background); }
 .button.primary:hover, .new-button:hover { background: #ccc; border-color: #ccc; }
-.brand-icon { background: var(--foreground); color: var(--background); }
 .green-dot, .running-editor-dot, .agent-working-dots i { background: var(--success); }
 .gray-dot { background: #666; }
 .button.delete-notebook { color: var(--danger); border-color: #763136; }
