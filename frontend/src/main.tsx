@@ -152,7 +152,7 @@ function cachedNotebooks(): Notebook[] | null {
 function ChatLoading({ open, onClose }: { open: boolean; onClose: () => void }) {
   return <aside className="chat-panel" hidden={!open} aria-label="Notebook chat" aria-busy="true">
     <header className="surface-toolbar">
-      <span><span className="green-dot" />NOTEBOOK CHAT</span>
+      <span><span className="green-dot" />CHAT</span>
       <span className="chat-header-actions"><button className="icon-button" aria-label="Close chat" onClick={onClose}><X size={18} /></button></span>
     </header>
     <div className="chat-messages"><p className="chat-hint chat-status" role="status"><LoaderCircle size={14} className="spin" aria-hidden="true" />Loading conversation…</p></div>
@@ -798,7 +798,7 @@ function App() {
                     className={selected && startingIds.has(selected) ? "green-dot starting-editor-dot" : editorReady ? "green-dot" : "gray-dot"}
                     aria-label={selected && startingIds.has(selected) ? "Editor starting" : editorReady ? "Editor connected" : "Read-only notebook"}
                   />
-                  <h1>{notebook?.title}</h1>
+                  <h1 aria-label={notebook?.title} title={notebook?.title}>NOTEBOOK</h1>
                   {editorReady && saveNotice?.id === selected && <span key={saveNotice.at} className="saved-pill" role="status">Saved</span>}
                   {!editorReady && (setupStage || setupLog) && <button
                     className="setup-status" aria-label="Editor startup status" aria-expanded={setupPanelOpen}

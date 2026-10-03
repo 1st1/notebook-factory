@@ -384,7 +384,8 @@ h1 {
   align-items: center;
   gap: 7px;
 }
-.surface-toolbar > span:first-child {
+.surface-toolbar > span:first-child,
+.notebook-panel-title h1 {
   letter-spacing: 1.5px;
   font-size: 8px;
   font-weight: 550;
@@ -814,7 +815,7 @@ main > .error > button { flex-shrink: 0; }
 main { padding-top: 12px; }
 .notebook-toolbar { gap: 12px; }
 .notebook-panel-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
-.notebook-panel-title h1 { min-width: 0; margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.notebook-panel-title h1 { min-width: 0; margin: 0; font-size: 8px; font-weight: 550; letter-spacing: 1.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .notebook-panel-title > span { flex-shrink: 0; }
 .notebook-header-actions { margin-left: auto; gap: 6px; flex-shrink: 0; }
 .notebook-header-actions .button { height: 28px; padding: 0 8px; font-size: 11px; gap: 5px; }

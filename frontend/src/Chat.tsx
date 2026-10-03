@@ -282,7 +282,7 @@ export function Chat({
   return (
     <aside className="chat-panel" hidden={!open} aria-label="Notebook chat">
       <header className="surface-toolbar">
-        <span><span className="green-dot" />NOTEBOOK CHAT</span>
+        <span><span className="green-dot" />CHAT</span>
         <span className="chat-header-actions">
         {!readOnly && <button
           className="icon-button new-chat-button"
