@@ -4,6 +4,7 @@ const http=require('http'),fs=require('fs'),path=require('path'),assert=require(
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 let holdClose=false,holdStart=false,heldStart,closeSource,starts=[],expiredIds=new Set(),saves=[],boots={},histories=new Map(),messagesSeen=[];
 let authProfile={login:'1st1',user_id:1};
+let ageChangedAt=null;
 let releaseBackground;
 const startFailureIds=new Set();
 let holdHistory=true;const historyWaiters=[];
@@ -24,7 +25,7 @@ const server=http.createServer(async(req,res)=>{
  if(u.pathname.endsWith('/chat-history')){const v=histories.get(id)||{messages:[],revision:0};if(req.method==='PUT'){histories.set(id,{messages:body.messages,revision:body.revision+1});return res.end(JSON.stringify({revision:body.revision+1}));}if(holdHistory){historyWaiters.push(()=>res.end(JSON.stringify(v)));return;}return res.end(JSON.stringify(v));}
  if(u.pathname.endsWith('/editor')){starts.push(id);const send=()=>res.end('data: '+JSON.stringify(startFailureIds.has(id)?{type:'error',message:'Test startup unavailable'}:{type:'ready',editor:{name:'test',token:id+'-'+starts.length,url:'http://127.0.0.1:5187/editor-frame?id='+id}})+'\n\n');if(holdStart){res.write('data: '+JSON.stringify({type:'progress',message:'Preparing test environment…'})+'\n\n');res.write('data: '+JSON.stringify({type:'log',message:'Retained setup log'})+'\n\n');heldStart=send;return;}return send();}
  if(u.pathname.endsWith('/editor-status')){res.statusCode=expiredIds.has(id)?410:200;return res.end('{}');}
- if(u.pathname.endsWith('/save')){saves.push({id,...body});return res.end('{}');}
+ if(u.pathname.endsWith('/save')){saves.push({id,...body});if(id==='age-check'&&ageChangedAt!==null){const item=notebooks.find(n=>n.id===id);item.updated_at=ageChangedAt;item.revision++;ageChangedAt=null;return res.end(JSON.stringify({...item,changed:true}));}return res.end('{}');}
  if(u.pathname.endsWith('/close')){closeSource=body.source;if(holdClose)return;return res.end('{}');}
  if(u.pathname.endsWith('/fork')){const original=notebooks.find(n=>n.id===id);const fork={...original,id:'forked',owner_id:1};notebooks.push(fork);return res.end(JSON.stringify(fork));}
  if(u.pathname.endsWith('/download'))return res.end(JSON.stringify(nb));
@@ -122,7 +123,7 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  assert.equal(boots.one,1);
  await page.goBack();await page.getByRole('heading',{name:'How it works'}).waitFor();
  await page.goBack();await page.getByTitle('Jupyter editor: Notebook one').waitFor();
- await page.locator('a.brand').click();await page.getByRole('heading',{name:'Choose a notebook.'}).waitFor();await aButton.click();assert.equal(await aFrame.locator('body').evaluate(()=>window.retainedValue),42);assert.equal(boots.one,1);assert.equal(boots.two,1);
+ await page.locator('a.brand').click();await page.getByRole('heading',{name:'Choose a notebook'}).waitFor();await aButton.click();assert.equal(await aFrame.locator('body').evaluate(()=>window.retainedValue),42);assert.equal(boots.one,1);assert.equal(boots.two,1);
  await page.frameLocator('iframe[title="Jupyter editor: Notebook two"]').locator('body').evaluate(()=>{window.connected=false});
  await page.clock.fastForward(15001);for(let i=0;i<30&&await bButton.getByLabel('Editor connected').count();i++)await tick();assert.equal(await bButton.getByLabel('Editor connected').count(),0,'kernel disconnection clears background dot');assert.equal(starts.length,2);
  expiredIds.add('two');await page.clock.fastForward(15001);await tick();await bButton.click();await page.getByTitle('Rendered notebook').waitFor();await page.clock.fastForward(15001);await tick();assert.equal(starts.length,2,'disconnected background editor stays read-only until explicitly opened');
@@ -234,6 +235,29 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  await page.clock.fastForward(300);
  await page.locator('.sidebar').evaluate(el=>el.style.transition='none');
  if(process.env.SCREENSHOT_PATH)await page.screenshot({path:process.env.SCREENSHOT_PATH});
+ // @lat: [[editing#Saving and publication]]
+ await page.close();
+ authProfile={login:'1st1',user_id:1};
+ const agePage=await browser.newPage();
+ const savedTime=new Date('2026-10-02T20:00:00Z');
+ notebooks.push({id:'age-check',title:'Save age',owner_id:1,revision:1,updated_at:savedTime.getTime()/1000});
+ await agePage.clock.install({time:savedTime});
+ await agePage.goto('http://127.0.0.1:5187/?notebook=age-check');
+ await agePage.getByRole('button',{name:'Edit notebook',exact:true}).click();
+ const age=agePage.getByRole('button',{name:'Last save status'});
+ await age.waitFor();
+ assert.match(await age.textContent(),/^Last saved \d+ seconds? ago$/);
+ assert.equal(await age.locator('small').count(),0,'completed setup duration is hidden');
+ await agePage.clock.fastForward(65000);await tick();
+ assert.equal(await age.textContent(),'Last saved 1 minute ago');
+ await agePage.clock.fastForward(3600000);await tick();
+ assert.equal(await age.textContent(),'Last saved 1 hour ago','unchanged autosaves preserve the last changed timestamp');
+ ageChangedAt=await agePage.evaluate(()=>Math.floor(Date.now()/1000));
+ await agePage.evaluate(()=>window.dispatchEvent(new Event('blur')));
+ for(let i=0;i<40&&!(await age.textContent()).includes('seconds ago');i++)await tick();
+ assert.match(await age.textContent(),/^Last saved \d+ seconds? ago$/,'a changed save resets the displayed age');
+ await age.click();await agePage.getByLabel('Environment setup',{exact:true}).waitFor();
+ await agePage.close();
  console.log('PASS: automatic saved-chat opening and manual dismissal, nonblocking history loads, view chat and consent, read-only navigation, retained iframe state across notebooks and welcome, multiple live dots, disconnected dot removal, active recovery');
 
 }finally{await browser.close();server.closeAllConnections();server.close()}})().catch(e=>{console.error(e);process.exit(1)});

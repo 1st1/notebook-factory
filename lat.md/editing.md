@@ -59,7 +59,7 @@ A bridge response must arrive within 20 seconds. Every 30 seconds, the frontend 
 
 [[backend/editor.py#check_available]] probes runtime availability without reading notebook files. App autosaves refresh the shared runtime idle horizon in the background. [[backend/main.py#save_draft]] stores the document and outputs; it never executes cells.
 
-Autosaves request publication while keeping the editor open. The backend persists source first, compares parsed notebook content with the published version, and only renders/uploads changed content. A changed publication atomically updates source, fallback HTML, Blob URL, revision, and timestamp. The browser updates its metadata cache immediately. Render/upload failure leaves the document saved and the prior publication intact; the next autosave retries. Conditional writes reject publication if source or revision changed during rendering.
+Autosaves request publication while keeping the editor open. The backend persists source first, compares parsed notebook content with the published version, and only renders/uploads changed content. A changed publication atomically updates source, fallback HTML, Blob URL, revision, and timestamp. The browser updates its metadata cache immediately. Once the editor is ready, its header shows the age of the last changed save in seconds, minutes, or hours, using the persisted notebook timestamp. Unchanged autosaves do not reset the age; clicking the status still opens startup events. Render/upload failure leaves the document saved and the prior publication intact; the next autosave retries. Conditional writes reject publication if source or revision changed during rendering.
 
 ## Closing and recovery
 

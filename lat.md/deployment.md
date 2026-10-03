@@ -151,7 +151,7 @@ Use a new Supabase database and SESSION_SECRET for the new deployment. No old ac
 
 ## Static project documentation
 
-The read-only Lat UI is built with each frontend deployment and served at `/lat/`, including direct document, graph, and linked source-code routes. The About page links to it with “See project docs”.
+The read-only Lat UI is built with each frontend deployment and served at `/lat/`, including direct document, graph, and linked source-code routes. The About page links to it with “See lat.md project docs”.
 
 [scripts/build_lat_ui.mjs](../scripts/build_lat_ui.mjs) builds the unreleased UI from the main branch of `vercel-labs/lat.md`, logging the resolved commit. It uses Lat’s prebuilt embedding packages, then runs `lat ui build static` with the `/lat/` base path and Lat’s default logo. Only the generated `lat` subtree is copied into the frontend’s public assets; the application’s root page is preserved. Generated output is ignored by Git. Lat’s publication policy excludes ignored files from the exported source views.
 

@@ -187,11 +187,6 @@ function App() {
   const [setupPanels, setSetupPanels] = useState<Record<string, boolean>>({});
   const setupPanelOpen = selected ? !!setupPanels[selected] : false;
   useEffect(() => {
-    if (setupStarted === null) return;
-    const timer = setInterval(() => tickSetup(value => value + 1), 1000);
-    return () => clearInterval(timer);
-  }, [setupStarted]);
-  useEffect(() => {
     const output = setupOutput.current;
     if (output) output.scrollTop = output.scrollHeight;
   }, [selected, setupLog, setupPanelOpen]);
@@ -258,6 +253,16 @@ function App() {
   const activeEditor = editor?.connected ? editor : null;
   const editorReady = !!activeEditor?.ready;
   const notebook = notebooks.find((n) => n.id === selected);
+  useEffect(() => {
+    if (setupStarted === null && !editorReady) return;
+    const timer = setInterval(() => tickSetup(value => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [setupStarted, editorReady]);
+  const savedSeconds = Math.max(0, Math.floor(Date.now() / 1000 - (notebook?.updated_at ?? Date.now() / 1000)));
+  const savedUnit = savedSeconds < 60 ? "second" : savedSeconds < 3600 ? "minute" : "hour";
+  const savedAmount = Math.floor(savedSeconds / (savedSeconds < 60 ? 1 : savedSeconds < 3600 ? 60 : 3600));
+  const lastSaved = `Last saved ${savedAmount} ${savedUnit}${savedAmount === 1 ? "" : "s"} ago`;
+
   const ownsNotebook = !!notebook && !!auth.user && notebook.owner_id === auth.user.user_id;
   const workspaceUsers = auth.user
     ? [...users.filter(u => u.id !== auth.user!.user_id), { id: auth.user.user_id, login: auth.user.login, avatar_url: auth.user.avatar_url }] : users;
@@ -732,8 +737,8 @@ function App() {
               <div className="welcome-page welcome-page-back" />
               <div className="welcome-page welcome-page-front"><BookOpen size={32} strokeWidth={1.25} /><span /><span /><span /></div>
             </div>
-            <h1 id="welcome-title">Choose a notebook.</h1>
-            <p>Open a notebook from the sidebar<br />to explore its code, charts, and ideas.</p>
+            <h1 id="welcome-title">Choose a notebook</h1>
+            <p>Open a notebook from the sidebar<br />to explore its code, charts, and ideas</p>
             <button className="button welcome-browse" onClick={() => setMobile(true)}><Menu size={16} /> Browse notebooks</button>
           </section>
         ) : (
@@ -777,15 +782,15 @@ function App() {
                 <div className="notebook-panel-title" title={activeEditor ? saved || "Changes save automatically" : `Updated ${date} · Revision ${notebook?.revision}`}>
                   <span className={activeEditor ? "green-dot" : "gray-dot"} />
                   <h1>{notebook?.title}</h1>
-                  {(setupStage || setupLog) && <button
-                    className="setup-status" aria-label="Editor startup status" aria-expanded={setupPanelOpen}
+                  {(editorReady || setupStage || setupLog) && <button
+                    className="setup-status" aria-label={editorReady ? "Last save status" : "Editor startup status"} aria-expanded={setupPanelOpen}
                     aria-controls="startup-events-panel"
-                    title={`${editorReady ? "Editor ready" : setupStage} · ${setupSeconds}s elapsed`}
+                    title={editorReady ? `Saved ${new Date((notebook?.updated_at ?? 0) * 1000).toLocaleString()} · View startup events` : `${setupStage} · ${setupSeconds}s elapsed`}
                     onClick={() => selected && setSetupPanels(items => ({ ...items, [selected]: !setupPanelOpen }))}
                   >
-                    {setupStarted !== null && <LoaderCircle size={12} className="spin" aria-hidden="true" />}
-                    <span role="status">{editorReady ? "Editor ready" : setupStage}</span>
-                    <small>{setupSeconds}s</small>
+                    {!editorReady && setupStarted !== null && <LoaderCircle size={12} className="spin" aria-hidden="true" />}
+                    <span role="status">{editorReady ? lastSaved : setupStage}</span>
+                    {!editorReady && <small>{setupSeconds}s</small>}
                   </button>}
 
                 </div>
