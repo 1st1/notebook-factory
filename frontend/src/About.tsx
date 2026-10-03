@@ -11,6 +11,7 @@ const components = [
   { name: "Vercel AI SDK UI", url: "https://ai-sdk.dev/docs/ai-sdk-ui/overview", text: "React useChat and its transport handle streamed messages, tool progress, and tool results in the chat panel." },
   { name: "Vercel Sandbox", url: "https://vercel.com/docs/vercel-sandbox", text: "Runs JupyterLab in one isolated VM per user, with a separate kernel per notebook. The Vercel Python Sandbox SDK manages VM lifecycle, commands, and workspace drives." },
   { name: "Jupyter Notebooks", url: "https://jupyter.org/", text: "Standard .ipynb files contain code, Markdown, and execution outputs. JupyterLab provides the embedded editor; nbconvert renders published HTML." },
+  { name: "Vite", url: "https://vite.dev/", text: "Provides the frontend development server and bundles the React application into static assets for deployment." },
   { name: "lat.md", url: "/lat/", text: "Repository documentation links architecture, design decisions, and test specifications to implementation symbols." },
 ];
 
