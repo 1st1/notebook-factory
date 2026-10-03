@@ -25,7 +25,7 @@ export function About({ onBack }: { onBack: () => void }) {
       <h1 id="about-title">How it works</h1>
       <p className="about-summary">React frontend, Python API, Jupyter execution in ▲ Sandbox. The agent edits notebook cells; documents are saved to Postgres and rendered HTML is published to ▲ Blob.</p>
       <a className="about-source button" href={source} target="_blank" rel="noopener noreferrer"><Github size={16} aria-hidden="true" />View source on GitHub</a>
-      <a className="about-source button" href="/lat/"><BookOpen size={16} aria-hidden="true" />See lat.md project docs</a>
+      <a className="about-source button" href="/lat/"><BookOpen size={16} aria-hidden="true" />See lat.md project architecture</a>
       <dl className="about-stack" aria-label="Technology stack">
         {components.map(({ name, url, text, links }) => <div className="about-component" key={name}>
           <dt>{(links ?? [{ name, url }]).map((link, index) => <Fragment key={link.name}>
