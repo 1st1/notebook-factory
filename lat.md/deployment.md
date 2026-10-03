@@ -4,7 +4,7 @@ The app deploys from the repository root as two Vercel Services, with Supabase P
 
 ## Production project
 
-The configured production application is [notebooks.playground-vercel.tools](https://notebooks.playground-vercel.tools), under the Vercel team `vercel-internal-playground` (Vercel Internal Playground).
+The configured production application is [notebooks.sh](https://notebooks.sh), under the Vercel team `vercel-internal-playground` (Vercel Internal Playground).
 
 | Setting | Project value |
 | --- | --- |
@@ -28,7 +28,7 @@ The production alias is public. Unique deployment URLs have Vercel deployment pr
 | --- | --- |
 | `AI_MODEL` | Optional chat model; defaults to gateway:openai/gpt-6-luna |
 | `AI_GATEWAY_API_KEY` | Optional AI Gateway key; deployments use Vercel OIDC by default |
-| `APP_URL` | Canonical app origin; production uses `https://notebooks.playground-vercel.tools` |
+| `APP_URL` | Canonical app origin; production uses `https://notebooks.sh` |
 | `BLOB_READ_WRITE_TOKEN` | Backend upload credential for the public rendered-notebook Blob store |
 | `SESSION_SECRET` | Random signing secret, at least 32 characters in deployment |
 | `DATABASE_URL` / `POSTGRES_URL` | Postgres connection URL; explicit DATABASE_URL takes precedence over the Supabase integration alias |
@@ -37,7 +37,7 @@ The production alias is public. Unique deployment URLs have Vercel deployment pr
 | `VERCEL_OIDC_TOKEN` | Request-scoped Sandbox identity in deployment, or an explicitly loaded local token |
 | `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID` | Alternative backend-only Sandbox credentials for local use |
 
-Register the canonical APP_URL plus `/api/auth/callback` as the Sign in with Vercel callback. Origin checks and iframe configuration also depend on the same APP_URL. Preview editing requires a matching origin, OAuth configuration, and environment scope.
+Register the canonical APP_URL plus `/api/auth/callback` as the Sign in with Vercel callback. The production OAuth app allows this project’s domains through its project callback configuration. Origin checks and iframe configuration also depend on the same APP_URL. Preview editing requires a matching origin, OAuth configuration, and environment scope.
 
 [[backend/main.py#headers]] installs the incoming request headers in the Vercel HeadersContext so the SDK can use deployment OIDC. The project needs Sandbox access and OIDC support. No static Vercel token is required in the deployed app.
 
