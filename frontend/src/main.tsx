@@ -329,11 +329,16 @@ function App() {
   useEffect(() => {
     const url = new URL(location.href);
     url.pathname = about ? "/about" : "/";
-    document.title = about ? "About — Python Notebooks" : "Python Notebooks";
     if (selected && !about) url.searchParams.set("notebook", selected);
     else url.searchParams.delete("notebook");
     history.replaceState({}, "", url);
   }, [selected, about]);
+
+  useEffect(() => {
+    document.title = about ? "About — Python Notebooks" : notebook
+      ? `${notebook.title} — Python Notebooks`
+      : "Python Notebooks";
+  }, [about, notebook?.title]);
   useEffect(() => {
     const navigate = () => {
       const isAbout = location.pathname.replace(/\/$/, "") === "/about";
