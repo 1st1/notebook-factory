@@ -16,7 +16,7 @@ Users and the assistant can run `%pip install numpy matplotlib` in a code cell t
 
 The dependency drive already includes Python 3.13, pip, pinned JupyterLab, NumPy, pandas, SciPy, Matplotlib, Seaborn, and prepared fonts. There is no interactive dependency installation. After configuration, the backend starts Jupyter and polls its public route for up to 45 seconds before declaring failure.
 
-Files in [backend/assets](../backend/assets) supply focused editor CSS, the message bridge, a SQLite compatibility shim, a launcher, and a template patch. These were adapted from `/Users/yury/dev/vercel/vercel-py`, branch `nb_next`, commit `8296336`; the upstream license is retained in [backend/assets/LICENSE](../backend/assets/LICENSE).
+Files in [backend/assets](https://github.com/vercel-labs/notebook-factory/tree/main/backend/assets) supply focused editor CSS, the message bridge, a SQLite compatibility shim, a launcher, and a template patch. These were adapted from `/Users/yury/dev/vercel/vercel-py`, branch `nb_next`, commit `8296336`; the upstream license is retained in [backend/assets/LICENSE](../backend/assets/LICENSE).
 
 [[backend/assets/patch_jupyter_template.py]] patches the installed Jupyter application HTML while preserving its bundle references. [[backend/assets/jupyter_launcher.py]] derives root, settings, and template paths from its own location instead of assuming `/vercel/sandbox` is the workspace.
 

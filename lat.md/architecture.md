@@ -89,7 +89,7 @@ Titles are set at creation and can be changed through [[chat#Notebook renaming]]
 
 The API entrypoint is `main:app`, with a 300-second function limit. The catch-all deliberately uses `/(.*)`: the previous `/:path*` form missed the bare root path in production. Deploy the repository root so both services and rewrites are included.
 
-[frontend/package.json](../frontend/package.json) defines React 19, TypeScript, Vite, and Lucide dependencies. [backend/pyproject.toml](../backend/pyproject.toml) defines FastAPI, SQLAlchemy, asyncpg, nbformat, nbconvert, and the Python Sandbox SDK; the lockfiles resolve installed versions. [backend/.python-version](../backend/.python-version) selects Python 3.13.
+[frontend/package.json](../frontend/package.json) defines React 19, TypeScript, Vite, and Lucide dependencies. [backend/pyproject.toml](../backend/pyproject.toml) defines FastAPI, SQLAlchemy, Psycopg, nbformat, nbconvert, and the Python Sandbox SDK; the lockfiles resolve installed versions. `backend/.python-version` selects Python 3.13.
 
 Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic connects directly to the Sandbox origin; Functions do not proxy kernel WebSockets. Postgres stores durable notebook state. See [[deployment]] for the actual project configuration.
 
@@ -111,7 +111,7 @@ Browser API calls stay on the app origin. Editor HTTP and WebSocket traffic conn
 
 [[backend/db.py#initialize]] creates missing tables under a Postgres transaction advisory lock. It targets a fresh database, with no reserved users or legacy GitHub migrations. Postgres retains up to two idle connections with three overflow connections, pre-ping checks, and five-minute recycling to avoid repeating connection setup on every request. SQLite tests use NullPool. Application shutdown disposes the pool.
 
-[[backend/config.py]] normalizes conventional Postgres URLs for asyncpg, maps `sslmode` to `ssl`, and removes libpq's `channel_binding` option. Deployment startup rejects missing or non-Postgres database configuration.
+[[backend/config.py]] normalizes conventional Postgres URLs for Psycopg and removes Supabase attribution parameters; PostgreSQL TLS options are retained. Deployment startup rejects missing or non-Postgres database configuration.
 
 [[backend/main.py#editor_lease]] serializes create-editor, save, and close operations with a five-minute database lease. Conflicting operations return 409. Lease release matches the claim token, so one request cannot clear another request’s lease.
 
@@ -123,7 +123,7 @@ Published iframes stay hidden behind a dark loading surface until their load eve
 
 Published HTML uses the JupyterLab dark palette with shared notebook surface overrides. The browser and fallback endpoint also theme older cached HTML without rerunning cells; existing plot images retain their saved colors.
 
-Lab and base templates are bundled in [backend/templates](../backend/templates), with explicit template search paths. Functions cannot rely on system-installed Jupyter data directories. Public downloads also return `published`, even for the signed-in owner.
+Lab and base templates are bundled in [backend/templates](https://github.com/vercel-labs/notebook-factory/tree/main/backend/templates), with explicit template search paths. Functions cannot rely on system-installed Jupyter data directories. Public downloads also return `published`, even for the signed-in owner.
 
 The rendered iframe and API response both enforce sandboxing. The CSP blocks network connections and nested frames while permitting selected script CDNs, styles, fonts, and images. Some interactive outputs therefore do not work publicly. HTML conversion runs off the API event loop. Blob upload completes first, then source, fallback HTML, Blob URL, and revision are published in one transaction; rendering failure preserves the prior publication. Legacy rows render once on first read, with a revision-guarded cache write that cannot overwrite a newer publication. Notebook listings select metadata only.
 
@@ -197,7 +197,7 @@ The public sidebar renders independently of authentication and refreshes every 3
 
 [[frontend/src/main.tsx#cachedNotebooks]] stores only the public list and published render URLs in session storage. Auth and edit permissions are never cached. Fresh list responses replace cached entries and reconcile selection; unavailable storage falls back to normal loading.
 
-Opening the app without a notebook query parameter shows a welcome prompt to choose from the sidebar, never selecting the first cached or fetched notebook automatically. Direct notebook links still open their target; missing targets return to the welcome view. The logo returns to this unselected view while preserving mounted editors. Switching notebooks shows the destination publication unless it already has a connected editor in this browser; a green sidebar dot identifies those live editors. Returning reuses the same iframe and kernel. On mobile, Browse notebooks opens navigation. An empty workspace retains its creation prompt. [[backend/db.py]] reuses bounded Postgres connections for warm requests.
+Opening the app without a notebook query parameter shows a welcome prompt to choose from the sidebar, never selecting the first cached or fetched notebook automatically. Direct notebook links still open their target; missing targets return to the welcome view. The logo returns to this unselected view while preserving mounted editors. Switching notebooks shows the destination publication unless it already has a connected editor in this browser; a green sidebar dot identifies those live editors. Returning reuses the same iframe and kernel. On mobile, Browse notebooks opens navigation. An empty workspace retains its creation prompt. [[backend/db.py]] closes app-side connections after each database operation and delegates pooling to Supabase transaction mode.
 
 
 ## Notebook deletion
@@ -255,4 +255,4 @@ The browser debounces searches for 250 milliseconds, cancels stale requests, sho
 
 The public `/about` route provides a compact technical overview, with component responsibilities and links to source code and architecture documentation.
 
-[[frontend/src/About.tsx#About]] covers Vercel CDN, Python hosting with FastAPI, Supabase, Blob, AI Gateway, Python AI SDK, AI SDK UI, Sandbox and its Python SDK, Jupyter, and lat.md. The sidebar exposes the page, and the Vite build emits an About app shell for direct `/about` requests. In-app navigation retains mounted editors and background chat work, while browser history supports leaving and returning to the page. The layout uses simple typography and a responsive definition list in its own scroll area. Supabase appears first, Vercel products and SDKs use triangle branding, and a GitHub source button precedes the list.
+[[frontend/src/About.tsx#About]] covers Vercel CDN, Python hosting with FastAPI, Supabase, Blob, AI Gateway, Python AI SDK, AI SDK UI, Sandbox and its Python SDK, Jupyter, and lat.md. The sidebar exposes the page, and the Vite build emits an About app shell for direct `/about` requests. In-app navigation retains mounted editors and background chat work, while browser history supports leaving and returning to the page. The layout uses simple typography and a responsive definition list in its own scroll area. Supabase appears first, Vercel products and SDKs use triangle branding, and GitHub source and “See project docs” buttons precede the list. The docs button opens [[deployment#Static project documentation|the static Lat UI]] at `/lat/`.
