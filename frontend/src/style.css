@@ -2,6 +2,7 @@
 :root {
   color-scheme: dark;
   --background: #000;
+  --workspace-gap: 16px;
   --surface: #0a0a0a;
   --hover: #171717;
   --active: #1f1f1f;
@@ -81,9 +82,9 @@ svg {
   overflow: hidden;
   width: 264px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  background: var(--surface);
-  padding: 13px 20px 16px;
+  border-right: 0;
+  background: transparent;
+  padding: 13px 0 16px var(--workspace-gap);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -97,6 +98,7 @@ svg {
   gap: 6px;
 }
 .brand {
+  padding-left: 2px;
   height: 33px;
   line-height: 1;
   display: flex;
@@ -555,7 +557,7 @@ footer > span:last-child {
 @media (max-width: 1000px) {
   .sidebar {
     width: 225px;
-    padding: 26px 15px;
+    padding: 13px 0 16px var(--workspace-gap);
   }
   main {
     margin-left: 225px;
@@ -593,6 +595,8 @@ footer > span:last-child {
     transition: transform 0.2s;
   }
   .sidebar.open {
+    background: var(--background);
+    padding-right: var(--workspace-gap);
     transform: translateX(0);
   }
   main {
@@ -698,7 +702,7 @@ main > .progress { flex-shrink: 0; }
   .sidebar-bottom { padding-top: 8px; }
 }
 
-.notebook-workspace { display: flex; flex: 1; min-height: 0; min-width: 0; gap: 12px; position: relative; margin: 0 12px; }
+.notebook-workspace { display: flex; flex: 1; min-height: 0; min-width: 0; gap: var(--workspace-gap); position: relative; margin: 0 var(--workspace-gap); }
 .notebook-workspace .notebook-surface { min-width: 0; margin: 0; }
 .chat-panel { display: flex; flex-direction: column; width: 360px; max-width: 100%; min-height: 0; flex-shrink: 0; border: 1px solid var(--border); border-radius: 2px; background: var(--surface); overflow: hidden; }
 .chat-panel[hidden] { display: none; }
@@ -833,7 +837,7 @@ main { padding-top: 12px; }
 
 /* Geist: neutral surfaces, high-contrast actions, semantic status colors. */
 :root, main { background: var(--background); }
-.sidebar, .surface-toolbar { background: var(--surface); }
+.surface-toolbar { background: var(--surface); }
 .button:hover, .owner-toggle:hover, .notebook-link:hover { background: var(--hover); }
 .notebook-link.active, .chat-message.user { background: var(--active); color: var(--foreground); }
 .button.primary, .new-button { background: #ccc; border-color: #ccc; color: var(--background); }
