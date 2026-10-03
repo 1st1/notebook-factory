@@ -889,3 +889,21 @@ def test_workspace_fetches_all_sidebar_metadata_in_one_join(client):
     assert len({user["id"] for user in data["users"]}) == len(data["users"])
     notebook = next(item for item in data["notebooks"] if item["id"] == notebook_id)
     assert set(notebook) == {"id", "owner_id", "title", "updated_at", "revision", "render_url"}
+
+
+# @lat: [[chat#Initial notebook prompt tests]]
+@pytest.mark.parametrize("prompt", ["  Plot a sine wave.\n\nExplain the axes.  ", "   "])
+def test_creation_prompt_is_notebook_introduction(client, prompt):
+    authenticate(client)
+    response = client.post("/api/notebooks", json={"title": "Experiment", "prompt": prompt})
+    assert response.status_code == 201
+    notebook = client.get(f"/api/notebooks/{response.json()['id']}/download").json()
+    opening = notebook["cells"][0]
+    assert opening["cell_type"] == "markdown"
+    text = "".join(opening["source"])
+    assert text.startswith("# Experiment\n\n")
+    if prompt.strip():
+        assert text == "# Experiment\n\n" + prompt.strip()
+        assert "Start with a question" not in text
+    else:
+        assert "Start with a question" in text

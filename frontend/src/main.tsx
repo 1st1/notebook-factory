@@ -912,7 +912,7 @@ function App() {
               if (busy || !title.trim()) return;
               const prompt = initialPrompt.trim();
               action("Creating notebook…", async () => {
-                const item = await api<Notebook>("/notebooks", { title });
+                const item = await api<Notebook>("/notebooks", { title, prompt });
                 await refresh();
                 choose(item.id);
                 setExpandedUsers(items => ({ ...items, [item.owner_id]: true }));

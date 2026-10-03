@@ -56,12 +56,13 @@ def render(source: str):
     return themed_html(html)
 
 
-def new_notebook(title: str):
+def new_notebook(title: str, prompt: str = ""):
+    introduction = prompt.strip() or "Start with a question. Make something worth sharing. Or ask the agent to do it for you."
     return nbformat.writes(
         nbformat.v4.new_notebook(
             cells=[
                 nbformat.v4.new_markdown_cell(
-                    "# " + title + "\n\nStart with a question. Make something worth sharing. Or ask the agent to do it for you."
+                    "# " + title + "\n\n" + introduction
                 ),
                 nbformat.v4.new_code_cell('print("Hello, notebook.")'),
             ],

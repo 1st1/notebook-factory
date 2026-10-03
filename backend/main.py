@@ -46,6 +46,7 @@ async def headers(request, call_next):
 
 class CreateNotebook(BaseModel):
     title: str = Field(min_length=1, max_length=120)
+    prompt: str = Field(default="", max_length=10000)
 
 
 class EditorRequest(BaseModel):
@@ -129,7 +130,7 @@ async def create_notebook(body: CreateNotebook, owner=Depends(require_user)):
     title = body.title.strip()
     if not title:
         raise HTTPException(422, "Enter a notebook title")
-    source = new_notebook(title)
+    source = new_notebook(title, body.prompt)
     id = str(uuid4())
     html = await anyio.to_thread.run_sync(render, source)
     render_url = await publication.upload(id, html)
