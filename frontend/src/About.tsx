@@ -2,7 +2,7 @@ import { BookOpen, Github } from "lucide-react";
 
 const source = "https://github.com/vercel-labs/notebook-factory";
 const components = [
-  { name: "Supabase", url: "https://supabase.com/", text: "Postgres stores users, notebook documents and outputs, published revisions, chat history, and editor sessions." },
+  { name: "Supabase", url: "https://supabase.com/", text: "Postgres stores users, notebook documents and outputs, published revisions, chat history, and editor sessions. It also powers full-text search across notebook titles and content." },
   { name: "Vercel CDN", url: "https://vercel.com/docs/cdn", text: "Serves the React application's static HTML, JavaScript, and CSS." },
   { name: "Vercel + FastAPI", url: "https://vercel.com/docs/frameworks/backend/fastapi", text: "Runs FastAPI on Vercel Fluid Serverless platform." },
   { name: "Vercel Blob", url: "https://vercel.com/docs/vercel-blob", text: "Stores rendered notebook HTML and prepared font assets. Published notebooks can be read without starting a kernel." },
