@@ -15,7 +15,35 @@ def test_supabase_integration_url(monkeypatch):
     monkeypatch.setenv('APP_URL', 'https://example.com')
     monkeypatch.setenv('POSTGRES_URL', 'postgres://user:pass@aws-0-us-west-1.pooler.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x')
     config = runpy.run_path(str(Path(__file__).parents[1] / 'config.py'))
-    assert config['DATABASE_URL'] == 'postgresql+asyncpg://user:pass@aws-0-us-west-1.pooler.supabase.com:5432/postgres?ssl=require'
+    assert config['DATABASE_URL'] == 'postgresql+psycopg://user:pass@aws-0-us-west-1.pooler.supabase.com:6543/postgres?sslmode=require'
     monkeypatch.setenv('DATABASE_URL', 'postgresql://user:pass@custom.example:5432/app')
     config = runpy.run_path(str(Path(__file__).parents[1] / 'config.py'))
-    assert config['DATABASE_URL'] == 'postgresql+asyncpg://user:pass@custom.example:5432/app'
+    assert config['DATABASE_URL'] == 'postgresql+psycopg://user:pass@custom.example:5432/app'
+
+
+# @lat: [[deployment#Environment configuration]]
+async def test_postgres_releases_connections_and_disables_preparation(monkeypatch):
+    import pytest
+    from sqlalchemy import event
+    from sqlalchemy.pool import NullPool
+
+    monkeypatch.setitem(sys.modules, 'config', types.SimpleNamespace(
+        DATABASE_URL='postgresql+psycopg://user:pass@localhost:6543/postgres?sslmode=require',
+    ))
+    db = runpy.run_path(str(Path(__file__).parents[1] / 'db.py'))
+    engine = db['engine']
+    assert isinstance(engine.pool, NullPool)
+    captured = {}
+
+    @event.listens_for(engine.sync_engine, 'do_connect')
+    def capture(dialect, record, args, kwargs):
+        captured.update(kwargs)
+        raise RuntimeError('connection intercepted')
+
+    with pytest.raises(RuntimeError, match='connection intercepted'):
+        async with engine.connect():
+            pass
+    assert captured['prepare_threshold'] is None
+    assert captured['port'] == 6543
+    assert captured['sslmode'] == 'require'
+    await engine.dispose()

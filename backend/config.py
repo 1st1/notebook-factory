@@ -17,21 +17,14 @@ if not DATABASE_URL:
     if PRODUCTION:
         raise RuntimeError("DATABASE_URL or POSTGRES_URL is required on Vercel")
     DATABASE_URL = "sqlite+aiosqlite:///" + str(Path(__file__).with_name("notebooks.db"))
-if DATABASE_URL.startswith(("postgres://", "postgresql://")):
-    DATABASE_URL = "postgresql+asyncpg://" + DATABASE_URL.split("://", 1)[1]
+if DATABASE_URL.startswith(("postgres://", "postgresql://", "postgresql+asyncpg://", "postgresql+psycopg://")):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL.split("://", 1)[1]
     url = urlsplit(DATABASE_URL)
-    # SQLAlchemy asyncpg uses prepared statements: use Supavisor session mode.
-    if (url.hostname or "").endswith(".pooler.supabase.com") and url.port == 6543:
-        url = url._replace(netloc=url.netloc.rsplit(":", 1)[0] + ":5432")
     query = dict(parse_qsl(url.query))
-    if "sslmode" in query:
-        query["ssl"] = query.pop("sslmode")
-    # libpq-only option; asyncpg negotiates SCRAM itself.
-    query.pop("channel_binding", None)
-    # Supabase Marketplace attribution is not an asyncpg connection option.
+    # Marketplace attribution is not a PostgreSQL connection option.
     query.pop("supa", None)
     DATABASE_URL = urlunsplit(url._replace(query=urlencode(query)))
-if PRODUCTION and not DATABASE_URL.startswith("postgresql+asyncpg://"):
+if PRODUCTION and not DATABASE_URL.startswith("postgresql+psycopg://"):
     raise RuntimeError("Use a durable Postgres DATABASE_URL on Vercel")
 MAX_BYTES = 10 * 1024 * 1024
 
