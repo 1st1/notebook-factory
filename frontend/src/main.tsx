@@ -228,7 +228,7 @@ function App() {
   const editorsRef = useRef(editors);
   const editor = selected ? editors[selected] ?? null : null;
   const [chatPanel, setChatPanel] = useState<{ id: string | null; open: boolean }>({ id: null, open: false });
-  const chatOpen = chatPanel.id === selected ? chatPanel.open : true;
+  const chatOpen = chatPanel.id === selected ? chatPanel.open : !window.matchMedia("(max-width: 650px)").matches;
   const setChatOpen = (open: boolean) => setChatPanel({ id: selected, open });
   const [chatStates, setChatStates] = useState<Record<string, { busy: boolean; working: boolean }>>({});
   const chatBusy = !!selected && !!chatStates[selected]?.busy;
@@ -586,7 +586,7 @@ function App() {
       setMobile(false);
     }
     if (id === selected) return;
-    setChatPanel({ id, open: true });
+    setChatPanel({ id, open: !window.matchMedia("(max-width: 650px)").matches });
     if (editor?.ready) void saveEditor(editor).catch(() => setError("A notebook draft could not be saved. Keep this tab open; autosave will retry."));
     selectedRef.current = id;
     setSelected(id); setMobile(false); setError(""); setSaved("");
