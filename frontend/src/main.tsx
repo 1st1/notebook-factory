@@ -854,6 +854,29 @@ function App() {
                       setExpandedUsers(items => ({ ...items, [auth.user!.user_id]: true }));
                     });
                   }}><GitFork size={16} />Fork</button>}
+                  {ownsNotebook && editor?.ready && <button
+                    className="button"
+                    disabled={!!busy || chatBusy || setupStarted !== null}
+                    onClick={() => {
+                      const current = editor;
+                      void action("Saving and quitting editor…", async () => {
+                        closingTokens.current.add(current.token);
+                        try {
+                          const source = await saveBridge(current);
+                          await api(`/notebooks/${current.notebookId}/close`, { token: current.token, source, publish: true }, AbortSignal.timeout(60000));
+                          if (editorsRef.current[current.notebookId]?.token === current.token) putEditor(current.notebookId, null);
+                          setSetups(items => { const next = { ...items }; delete next[current.notebookId]; return next; });
+                          if (selectedRef.current === current.notebookId) {
+                            setSaveNotice(null);
+                            setRenderVersion(value => value + 1);
+                          }
+                          await refreshSidebar();
+                        } finally {
+                          closingTokens.current.delete(current.token);
+                        }
+                      });
+                    }}
+                  ><LogOut size={14} />Quit editor</button>}
                   {ownsNotebook && !activeEditor && (
                     <button className="button primary" disabled={!!busy || setupStarted !== null} onClick={() => { void openEditor(selected!).catch(() => { /* Stored with this notebook by loadEditor. */ }); }}>
                       <Pencil size={15} /> Edit notebook

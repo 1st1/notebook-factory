@@ -63,9 +63,9 @@ Autosaves request publication while keeping the editor open. The backend persist
 
 ## Closing and recovery
 
-Notebook navigation saves and publishes changes while keeping its editor running in the background. There is no Save & exit button.
+Notebook navigation saves and publishes changes while keeping its editor running in the background. Quit editor in the notebook header publishes the current browser document before closing only that notebook’s session.
 
-The Exit and Reconnect buttons are removed. The discard API remains available for legacy clients.
+Quit editor is disabled during agent work and other mutations. Failed export or persistence keeps the iframe mounted for retry; success returns to the published view while other notebooks keep running. The discard API remains available for legacy clients.
 
 [[backend/main.py#close]] saves the exported draft and clears the current editor record in a single conditional database update before returning success. [[backend/main.py#stop_closed_editor]] retires only the detached Jupyter session and its document as a response background task. The VM and other kernels stay running.
 
@@ -187,7 +187,7 @@ Switching notebooks selects the destination immediately. It opens read-only unle
 
 The notebook title dot pulses green during startup/recovery, becomes solid green when its editor is ready and connected, and stays gray otherwise. Reduced-motion preferences disable the pulse. The sidebar shows a blinking green dot as soon as editor startup or recovery begins, including while another notebook is selected. It clears on failure and becomes a solid green dot when the editor is ready and its server and kernel connection are healthy. Health polling combines the backend status endpoint with the authenticated bridge's kernel connection status. Browser offline events clear dots immediately; health checks restore them on reconnection. An expired background editor is not restarted just because it exists. Clicking it displays the publication; Edit notebook explicitly recovers its retained browser document before opening a replacement.
 
-Each editor opens a distinct named Jupyter workspace on the shared server. The bridge resolves the exact document from both plain and named-workspace routes, including Jupyter’s automatic redirects when another window already uses a workspace. This prevents second-editor readiness checks from looking for the wrong notebook. The iframe pool remains mounted even on the welcome screen. The Save & exit control is removed; automatic saves retain the notebook's editor. Tab close/reload loses browser state; durable drafts remain in Postgres, and an unload warning reminds the owner about open sessions. Chat sessions also stay mounted, so navigation remains available during assistant work and history saves. Active agents show three animated green dots instead of the connected-editor dot; tools keep targeting their original notebook.
+Each editor opens a distinct named Jupyter workspace on the shared server. The bridge resolves the exact document from both plain and named-workspace routes, including Jupyter’s automatic redirects when another window already uses a workspace. This prevents second-editor readiness checks from looking for the wrong notebook. The iframe pool remains mounted even on the welcome screen. Automatic saves retain the notebook’s editor until Quit editor explicitly closes it. Tab close/reload loses browser state; durable drafts remain in Postgres, and an unload warning reminds the owner about open sessions. Chat sessions also stay mounted, so navigation remains available during assistant work and history saves. Active agents show three animated green dots instead of the connected-editor dot; tools keep targeting their original notebook.
 
 [Browser flow regression](../frontend/tests/notebook_flows.cjs) verifies read-only navigation without startup, retained iframe state and load count across notebooks and the welcome screen, multiple live dots, dot removal after kernel disconnection, and selected-editor recovery. Run after the frontend build with Playwright installed, optionally setting PLAYWRIGHT_MODULE to its module path.
 

@@ -5,6 +5,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 let holdClose=false,holdStart=false,heldStart,closeSource,starts=[],expiredIds=new Set(),saves=[],boots={},histories=new Map(),messagesSeen=[];
 let authProfile={login:'1st1',user_id:1};
 let ageChangedAt=null;
+let failClose=false;
 let releaseBackground;
 const startFailureIds=new Set();
 let holdHistory=true;const historyWaiters=[];
@@ -26,7 +27,7 @@ const server=http.createServer(async(req,res)=>{
  if(u.pathname.endsWith('/editor')){starts.push(id);const send=()=>res.end('data: '+JSON.stringify(startFailureIds.has(id)?{type:'error',message:'Test startup unavailable'}:{type:'ready',editor:{name:'test',token:id+'-'+starts.length,url:'http://127.0.0.1:5187/editor-frame?id='+id}})+'\n\n');if(holdStart){res.write('data: '+JSON.stringify({type:'progress',message:'Preparing test environment…'})+'\n\n');res.write('data: '+JSON.stringify({type:'log',message:'Retained setup log'})+'\n\n');heldStart=send;return;}return send();}
  if(u.pathname.endsWith('/editor-status')){res.statusCode=expiredIds.has(id)?410:200;return res.end('{}');}
  if(u.pathname.endsWith('/save')){saves.push({id,...body});if(id==='age-check'&&ageChangedAt!==null){const item=notebooks.find(n=>n.id===id);item.updated_at=ageChangedAt;item.revision++;ageChangedAt=null;return res.end(JSON.stringify({...item,changed:true}));}return res.end('{}');}
- if(u.pathname.endsWith('/close')){closeSource=body.source;if(holdClose)return;return res.end('{}');}
+ if(u.pathname.endsWith('/close')){closeSource=body.source;if(failClose){res.statusCode=503;return res.end(JSON.stringify({detail:'Save unavailable'}));}if(holdClose)return;return res.end('{}');}
  if(u.pathname.endsWith('/fork')){const original=notebooks.find(n=>n.id===id);const fork={...original,id:'forked',owner_id:1};notebooks.push(fork);return res.end(JSON.stringify(fork));}
  if(u.pathname.endsWith('/download'))return res.end(JSON.stringify(nb));
  if(u.pathname.endsWith('/render')){res.setHeader('Content-Type','text/html');return res.end(process.env.RENDER_FIXTURE_PATH?fs.readFileSync(process.env.RENDER_FIXTURE_PATH):'Published '+id);}
@@ -267,6 +268,15 @@ const tick=()=>new Promise(r=>setTimeout(r,100));
  assert.equal(await notice.textContent(),'Saved');
  await agePage.clock.fastForward(3700);await tick();
  assert.equal(await notice.count(),0,'Saved disappears after the brief confirmation');
+ failClose=true;
+ await agePage.getByRole('button',{name:'Quit editor',exact:true}).click();
+ await agePage.getByText('Save unavailable',{exact:true}).waitFor();
+ assert.equal(await agePage.locator('iframe[title="Jupyter editor: Save age"]').count(),1,'failed close retains the live document');
+ failClose=false;
+ await agePage.getByRole('button',{name:'Quit editor',exact:true}).click();
+ await agePage.getByRole('button',{name:'Edit notebook',exact:true}).waitFor();
+ assert.equal(await agePage.locator('iframe[title="Jupyter editor: Save age"]').count(),0,'successful quit removes only the closed editor');
+ assert.equal(JSON.parse(closeSource).live,'unsaved document','quit exports current browser content');
  await agePage.close();
  console.log('PASS: automatic saved-chat opening and manual dismissal, nonblocking history loads, view chat and consent, read-only navigation, retained iframe state across notebooks and welcome, multiple live dots, disconnected dot removal, active recovery');
 
