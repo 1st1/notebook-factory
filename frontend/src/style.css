@@ -878,6 +878,8 @@ iframe { color-scheme: dark; }
 .about-nav a { font-size: 13px; }
 .about-page h1 { font-size: 22px; font-weight: 600; letter-spacing: -.4px; margin: 0 0 12px; }
 .about-summary { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 0 24px; }
+.about-page .about-source { display: inline-flex; gap: 8px; margin: 0 0 24px; padding: 9px 12px; font-size: 13px; text-decoration: none; border: 1px solid var(--border); border-radius: 2px; }
+.about-page .about-source:hover { color: var(--foreground); background: #171717; border-color: #666; }
 .about-stack { margin: 0; }
 .about-component { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 20px; padding: 14px 0; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.6; }
 .about-component dt { font-weight: 500; }
