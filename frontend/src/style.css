@@ -805,7 +805,7 @@ main > .error > button { flex-shrink: 0; }
 .owner-toggle strong { overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
 .owner-toggle small, .owner-count { font-size: 10px; color: var(--muted); }
 .owner-count { margin-left: auto; flex-shrink: 0; }
-.owner-notebooks { padding-left: 18px; }
+.owner-notebooks { padding-top: 4px; padding-left: 18px; }
 .owner-notebooks .notebook-link { padding-left: 12px; }
 .owner-toggle > svg, .notebook-link > svg { flex-shrink: 0; }
 .chat-readonly { border-top: 1px solid var(--border); padding: 14px 16px; font-size: 12px; color: var(--muted); }
