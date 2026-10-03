@@ -96,25 +96,6 @@ svg {
   justify-content: space-between;
   gap: 6px;
 }
-.repository-link {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 33px;
-  flex-shrink: 0;
-  color: var(--muted);
-  border-radius: 2px;
-  transition: color 150ms, background-color 150ms;
-}
-.repository-link > svg {
-  /* The GitHub outline carries most of its visual weight above its center. */
-  transform: translateY(2px);
-}
-.repository-link:hover,
-.repository-link:focus-visible {
-  color: var(--foreground);
-  background: var(--surface);
-}
 .brand {
   height: 33px;
   line-height: 1;
@@ -847,7 +828,7 @@ main { padding-top: 12px; }
 /* Geist: neutral surfaces, high-contrast actions, semantic status colors. */
 :root, main { background: var(--background); }
 .sidebar, .surface-toolbar { background: var(--surface); }
-.button:hover, .repository-link:hover, .owner-toggle:hover, .notebook-link:hover { background: var(--hover); }
+.button:hover, .owner-toggle:hover, .notebook-link:hover { background: var(--hover); }
 .notebook-link.active, .chat-message.user { background: var(--active); color: var(--foreground); }
 .button.primary, .new-button { background: var(--foreground); border-color: var(--foreground); color: var(--background); }
 .button.primary:hover, .new-button:hover { background: #ccc; border-color: #ccc; }

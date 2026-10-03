@@ -10,7 +10,6 @@ import {
   ChevronRight,
   GitFork,
   Download,
-  Github,
   LoaderCircle,
   LogOut,
   Menu,
@@ -613,16 +612,7 @@ function App() {
             </svg>
             <span>Python Notebooks</span>
           </a>
-          <a
-            className="repository-link"
-            href="https://github.com/vercel-labs/notebook-factory"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="View Python Notebooks on GitHub"
-            title="View on GitHub"
-          >
-            <Github size={15} aria-hidden="true" />
-          </a>
+
         </div>
         <label className="search">
           <Search size={15} />
