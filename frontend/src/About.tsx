@@ -4,7 +4,7 @@ const source = "https://github.com/vercel-labs/notebook-factory";
 const components = [
   { name: "Supabase", url: "https://supabase.com/", text: "Postgres stores users, notebook documents and outputs, published revisions, chat history, and editor sessions." },
   { name: "Vercel CDN", url: "https://vercel.com/docs/cdn", text: "Serves the React application's static HTML, JavaScript, and CSS." },
-  { name: "Vercel + FastAPI", url: "https://vercel.com/docs/frameworks/backend/fastapi", text: "Runs the Python API for authentication, access control, notebook persistence, and runtime orchestration." },
+  { name: "Vercel + FastAPI", url: "https://vercel.com/docs/frameworks/backend/fastapi", text: "Runs FastAPI on Vercel Fluid Serverless platform." },
   { name: "Vercel Blob", url: "https://vercel.com/docs/vercel-blob", text: "Stores rendered notebook HTML and prepared font assets. Published notebooks can be read without starting a kernel." },
   { name: "Vercel AI Gateway", url: "https://vercel.com/docs/ai-gateway", text: "Routes model requests from the backend, authenticated with the deployment's Vercel identity." },
   { name: "Vercel Python AI SDK", url: "https://github.com/vercel-labs/ai-python", text: "Runs the agent's model and tool loop, streaming responses to the browser. Tools read, edit, and execute notebook cells." },
