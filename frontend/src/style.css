@@ -275,7 +275,7 @@ main {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding-bottom: 16px;
+  padding-bottom: 12px;
   margin-left: 264px;
   width: calc(100% - 264px);
   min-width: 0;
@@ -705,7 +705,7 @@ main > .progress { flex-shrink: 0; }
   .sidebar-bottom { padding-top: 8px; }
 }
 
-.notebook-workspace { display: flex; flex: 1; min-height: 0; min-width: 0; gap: 16px; position: relative; margin: 0; }
+.notebook-workspace { display: flex; flex: 1; min-height: 0; min-width: 0; gap: 12px; position: relative; margin: 0 12px; }
 .notebook-workspace .notebook-surface { min-width: 0; margin: 0; }
 .chat-panel { display: flex; flex-direction: column; width: 360px; max-width: 100%; min-height: 0; flex-shrink: 0; border: 1px solid #dde1d5; border-radius: 10px; background: #fafbf7; overflow: hidden; }
 .chat-panel[hidden] { display: none; }
@@ -813,7 +813,7 @@ main > .error > button { flex-shrink: 0; }
 .chat-readonly { border-top: 1px solid #dde1d5; padding: 14px 16px; font-size: 12px; color: #7b8573; }
 
 /* Notebook actions share the compact panel-header treatment used by chat. */
-main { padding-top: 16px; }
+main { padding-top: 12px; }
 .notebook-toolbar { gap: 12px; }
 .notebook-panel-title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
 .notebook-panel-title h1 { min-width: 0; margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -826,7 +826,7 @@ main { padding-top: 16px; }
   .notebook-panel-title { flex: 1; }
   .notebook-menu { height: 28px; padding: 0 8px; font-size: 11px; gap: 5px; }
   .notebook-header-actions { flex-basis: 100%; justify-content: flex-end; }
-  main { padding-top: 8px; }
+  main { padding-top: 12px; }
 }
 
 .modal input + label { margin-top: 20px; }
