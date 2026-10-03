@@ -807,7 +807,6 @@ function App() {
                     title={`${setupStage} · ${setupSeconds}s elapsed`}
                     onClick={() => selected && setSetupPanels(items => ({ ...items, [selected]: !setupPanelOpen }))}
                   >
-                    {!editorReady && setupStarted !== null && <LoaderCircle size={12} className="spin" aria-hidden="true" />}
                     <span role="status">{setupStage}</span>
                     {!editorReady && <small>{setupSeconds}s</small>}
                   </button>}
